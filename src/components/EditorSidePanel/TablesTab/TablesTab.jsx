@@ -15,6 +15,7 @@ import { SortableList } from "../../SortableList/SortableList";
 import SearchBar from "./SearchBar";
 import Empty from "../Empty";
 import TableInfo from "./TableInfo";
+import TableCategoryBadge from "../../TableCategoryBadge";
 
 export default function TablesTab() {
   const { tables, addTable, setTables } = useDiagram();
@@ -107,6 +108,10 @@ function TableListItem({ table }) {
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2 flex-1">
               <DragHandle readOnly={layout.readOnly} id={table.id} />
+              <TableCategoryBadge
+                category={table.category}
+                color={table.color}
+              />
               <div className="overflow-hidden text-ellipsis whitespace-nowrap">
                 {table.name}
               </div>

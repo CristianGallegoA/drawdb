@@ -87,7 +87,7 @@ import { applyDiagramPlan } from "../../utils/dbml/applyPlan";
 import { diffDiagram } from "../../utils/dbml/diff";
 import { exportSavedData } from "../../utils/exportSavedData";
 import { nanoid } from "nanoid";
-import { getTableHeight } from "../../utils/utils";
+import { getTableHeight, getTableWidth } from "../../utils/utils";
 import { autoArrange } from "../../utils/autoArrange";
 import { findAutoFKRelationships } from "../../utils/autoRelationships";
 import { deleteFromCache, STORAGE_KEY } from "../../utils/cache";
@@ -646,16 +646,12 @@ export default function ControlPanel({
     tablesToFit.forEach((table) => {
       minMaxXY.minX = Math.min(minMaxXY.minX, table.x);
       minMaxXY.minY = Math.min(minMaxXY.minY, table.y);
-      minMaxXY.maxX = Math.max(minMaxXY.maxX, table.x + settings.tableWidth);
+      const width = getTableWidth(table, settings.tableWidth);
+      minMaxXY.maxX = Math.max(minMaxXY.maxX, table.x + width);
       minMaxXY.maxY = Math.max(
         minMaxXY.maxY,
         table.y +
-          getTableHeight(
-            table,
-            settings.tableWidth,
-            settings.showComments,
-            relationships,
-          ),
+          getTableHeight(table, width, settings.showComments, relationships),
       );
     });
 

@@ -71,6 +71,8 @@ export const tableSchema = {
       },
     },
     color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+    width: { type: "number" },
+    category: { type: "string" },
     inherits: {
       type: "array",
       items: { type: ["string"] },
@@ -177,6 +179,18 @@ export const jsonSchema = {
           updateConstraint: { type: "string" },
           deleteConstraint: { type: "string" },
           id: { type: ["integer", "string"] },
+          pathStyle: { type: "string" },
+          waypoints: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                x: { type: "number" },
+                y: { type: "number" },
+              },
+              required: ["x", "y"],
+            },
+          },
         },
         required: [
           "startTableId",

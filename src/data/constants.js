@@ -18,12 +18,22 @@ export const otherColor = "text-zinc-500";
 export const dateColor = "text-cyan-500";
 export const tableHeaderHeight = 50;
 export const tableWidth = 220;
+export const minTableWidth = 180;
+export const maxTableWidth = 640;
 export const gridSize = 24;
 export const gridCircleRadius = 0.85;
 export const tableFieldHeight = 36;
 export const tableColorStripHeight = 7;
 export const pngExportPixelRatio = 4;
 export const minAreaSize = 120;
+export const maxTableCategoryLength = 6;
+export const tableCategories = ["core", "stg", "ref", "erp", "view"];
+
+export const RelationshipPathStyle = {
+  ORTHOGONAL: "orthogonal",
+  STRAIGHT: "straight",
+  CURVED: "curved",
+};
 
 export const Cardinality = {
   ONE_TO_ONE: "one_to_one",

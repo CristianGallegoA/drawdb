@@ -4,6 +4,9 @@ import {
   tableFieldHeight,
   tableHeaderHeight,
   tableColorStripHeight,
+  tableWidth as defaultTableWidth,
+  minTableWidth,
+  maxTableWidth,
 } from "../data/constants";
 
 export function dataURItoBlob(dataUrl) {
@@ -157,6 +160,85 @@ export function getFieldHeight(field, containerWidth, showComments = true) {
       FIELD_COMMENT_MAX_LINES,
     )
   );
+}
+
+export function getTableWidth(table, fallback = defaultTableWidth) {
+  const width = Number(table?.width);
+  return Number.isFinite(width) && width > 0 ? width : fallback;
+}
+
+export function clampTableWidth(width) {
+  return Math.min(maxTableWidth, Math.max(minTableWidth, Math.round(width)));
+}
+
+// Kept apart from the comment measuring context: that one caches its font once
+// and reuses it for every measurement, so mutating the font here would corrupt
+// the comment height cache.
+let textMeasureCtx = null;
+
+function getTextMeasureCtx() {
+  if (!textMeasureCtx) {
+    textMeasureCtx = document.createElement("canvas").getContext("2d");
+  }
+  return textMeasureCtx;
+}
+
+/**
+ * White reads well on most table colors, but the picker allows any color, so a
+ * very light one falls back to near-black instead of becoming unreadable.
+ */
+export function readableTextColor(background) {
+  const hex = String(background ?? "").replace("#", "");
+  if (hex.length !== 6) return "#ffffff";
+
+  const channel = (pair) => {
+    const c = parseInt(pair, 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance =
+    0.2126 * channel(hex.slice(0, 2)) +
+    0.7152 * channel(hex.slice(2, 4)) +
+    0.0722 * channel(hex.slice(4, 6));
+
+  // Contrast ratio of white against the background, 3:1 being the threshold
+  // for bold text this size.
+  return 1.05 / (luminance + 0.05) >= 3 ? "#ffffff" : "#1c1f23";
+}
+
+const HEADER_ACTIONS_WIDTH = 96;
+const CATEGORY_BADGE_PADDING = 20;
+const FIELD_ROW_INSET = 62;
+const TYPE_GAP = 12;
+
+export function measureTableWidth(
+  table,
+  { showDataTypes = true, typeLabelOf = () => "" } = {},
+) {
+  const ctx = getTextMeasureCtx();
+  const family =
+    window.getComputedStyle(document.body).fontFamily || "sans-serif";
+
+  ctx.font = `bold 14px ${family}`;
+  let widest = ctx.measureText(table?.name ?? "").width + HEADER_ACTIONS_WIDTH;
+
+  if (table?.category) {
+    ctx.font = `bold 10px ${family}`;
+    widest +=
+      ctx.measureText(String(table.category).toUpperCase()).width +
+      CATEGORY_BADGE_PADDING;
+  }
+
+  for (const field of table?.fields ?? []) {
+    ctx.font = `14px ${family}`;
+    let row = ctx.measureText(field?.name ?? "").width;
+    if (showDataTypes) {
+      ctx.font = `13px ui-monospace, SFMono-Regular, monospace`;
+      row += ctx.measureText(typeLabelOf(field)).width + TYPE_GAP;
+    }
+    widest = Math.max(widest, row + FIELD_ROW_INSET);
+  }
+
+  return clampTableWidth(widest);
 }
 
 export function getRelationshipFields(relationship) {

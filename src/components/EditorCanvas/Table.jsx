@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Action,
   Tab,
@@ -33,8 +33,10 @@ import {
   useDiagram,
   useSelect,
   useUndoRedo,
+  useTransform,
 } from "../../hooks";
 import TableInfo from "../EditorSidePanel/TablesTab/TableInfo";
+import TableCategoryBadge from "../TableCategoryBadge";
 import { useTranslation } from "react-i18next";
 import { resolveType } from "../../utils/customTypes";
 import { isRtl } from "../../i18n/utils/rtl";
@@ -43,6 +45,9 @@ import {
   getCommentHeight,
   getFieldOffsetY,
   getTableHeight,
+  getTableWidth,
+  clampTableWidth,
+  measureTableWidth,
   getVisibleFieldEntries,
   getVisibleFields,
   getRelationshipFields,
@@ -56,7 +61,11 @@ export default function Table({
   setLinkingLine,
 }) {
   const [hoveredField, setHoveredField] = useState(null);
+  const [resizing, setResizing] = useState(false);
+  const [hoveredResizeHandle, setHoveredResizeHandle] = useState(false);
+  const initialWidthRef = useRef(null);
   const { layout } = useLayout();
+  const { transform } = useTransform();
   const {
     database,
     tables,
@@ -81,9 +90,11 @@ export default function Table({
     [settings.mode],
   );
 
+  const width = getTableWidth(tableData, settings.tableWidth);
+
   const height = getTableHeight(
     tableData,
-    settings.tableWidth,
+    width,
     settings.showComments,
     relationships,
   );
@@ -234,6 +245,47 @@ export default function Table({
     return { tableName: refTable.name, fieldName: refField.name };
   };
 
+  const typeLabelOf = (field) => {
+    const resolved = resolveType(database, field.type);
+    return (
+      field.type +
+      ((resolved.isSized || resolved.hasPrecision) && field.size
+        ? `(${field.size})`
+        : "")
+    );
+  };
+
+  const commitWidth = (from, to) => {
+    if (from === to) return;
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.TABLE,
+        component: "self",
+        tid: tableData.id,
+        undo: { width: from },
+        redo: { width: to },
+        message: t("edit_table", {
+          tableName: tableData.name,
+          extra: "[width]",
+        }),
+      },
+    ]);
+    setRedoStack([]);
+  };
+
+  const autoFitWidth = () => {
+    if (layout.readOnly || tableData.locked) return;
+    const fitted = measureTableWidth(tableData, {
+      showDataTypes: settings.showDataTypes,
+      typeLabelOf,
+    });
+    if (fitted === width) return;
+    commitWidth(width, fitted);
+    updateTable(tableData.id, { width: fitted });
+  };
+
   if (tableData.hidden) return null;
 
   return (
@@ -242,7 +294,7 @@ export default function Table({
         key={tableData.id}
         x={tableData.x}
         y={tableData.y}
-        width={settings.tableWidth}
+        width={width}
         height={height}
         className="group drop-shadow-lg rounded-md cursor-move"
         onPointerDown={onPointerDown}
@@ -273,8 +325,14 @@ export default function Table({
             <div
               className={`overflow-hidden font-bold h-[40px] flex justify-between items-center gap-2`}
             >
-              <div className="px-3 overflow-hidden text-ellipsis whitespace-nowrap min-w-0 flex-1">
-                {tableData.name}
+              <div className="px-3 min-w-0 flex-1 flex items-center gap-2">
+                <TableCategoryBadge
+                  category={tableData.category}
+                  color={tableData.color}
+                />
+                <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                  {tableData.name}
+                </span>
               </div>
               <div className="hidden group-hover:flex items-center shrink-0 pe-2">
                 <ButtonGroup
@@ -469,6 +527,56 @@ export default function Table({
           })}
         </div>
       </foreignObject>
+      {!layout.readOnly && !tableData.locked && (
+        <>
+          {(hoveredResizeHandle || resizing) && (
+            <line
+              x1={tableData.x + width}
+              y1={tableData.y + tableColorStripHeight}
+              x2={tableData.x + width}
+              y2={tableData.y + height}
+              stroke="#5891db"
+              strokeWidth={2}
+              className="pointer-events-none"
+            />
+          )}
+          <rect
+            x={tableData.x + width - 4}
+            y={tableData.y + tableColorStripHeight}
+            width={8}
+            height={Math.max(0, height - tableColorStripHeight)}
+            fill="transparent"
+            style={{ cursor: "ew-resize" }}
+            onPointerEnter={(e) => e.isPrimary && setHoveredResizeHandle(true)}
+            onPointerLeave={(e) => e.isPrimary && setHoveredResizeHandle(false)}
+            onPointerDown={(e) => {
+              if (!e.isPrimary) return;
+              // Keep the canvas from starting a bulk selection behind us.
+              e.stopPropagation();
+              initialWidthRef.current = width;
+              setResizing(true);
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (!resizing || !e.isPrimary) return;
+              const next = clampTableWidth(
+                width + e.movementX / (transform?.zoom || 1),
+              );
+              if (next !== width) updateTable(tableData.id, { width: next });
+            }}
+            onPointerUp={(e) => {
+              if (!resizing) return;
+              e.stopPropagation();
+              setResizing(false);
+              commitWidth(initialWidthRef.current, width);
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              autoFitWidth();
+            }}
+          />
+        </>
+      )}
       <SideSheet
         title={t("edit")}
         size="small"
@@ -542,14 +650,14 @@ export default function Table({
                   getFieldOffsetY(
                     visibleFields,
                     index,
-                    settings.tableWidth,
+                    width,
                     settings.showComments,
                   ) +
                   tableHeaderHeight +
                   tableColorStripHeight +
                   getCommentHeight(
                     tableData.comment,
-                    settings.tableWidth,
+                    width,
                     settings.showComments,
                   ) +
                   14;

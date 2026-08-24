@@ -30,7 +30,11 @@ import {
 } from "../../hooks";
 import { useTranslation } from "react-i18next";
 import { useEventListener } from "usehooks-ts";
-import { areFieldsCompatible, getTableHeight } from "../../utils/utils";
+import {
+  areFieldsCompatible,
+  getTableHeight,
+  getTableWidth,
+} from "../../utils/utils";
 import { getRectFromEndpoints, isInsideRect } from "../../utils/rect";
 import { State, noteWidth } from "../../data/constants";
 import { nanoid } from "nanoid";
@@ -160,13 +164,14 @@ export default function Canvas() {
         currentCoords: { x: table.x, y: table.y },
         initialCoords: { x: table.x, y: table.y },
       };
+      const tableWidth = getTableWidth(table, settings.tableWidth);
       const tableRect = {
         x: table.x,
         y: table.y,
-        width: settings.tableWidth,
+        width: tableWidth,
         height: getTableHeight(
           table,
-          settings.tableWidth,
+          tableWidth,
           settings.showComments,
           relationships,
         ),

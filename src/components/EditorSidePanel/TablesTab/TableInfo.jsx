@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import {
   Collapse,
   Input,
+  InputNumber,
   TextArea,
   Button,
   Card,
@@ -14,9 +15,25 @@ import {
   useDiagram,
   useLayout,
   useSaveState,
+  useSettings,
   useUndoRedo,
 } from "../../../hooks";
-import { Action, ObjectType, State, DB } from "../../../data/constants";
+import {
+  Action,
+  ObjectType,
+  State,
+  DB,
+  minTableWidth,
+  maxTableWidth,
+  maxTableCategoryLength,
+  tableCategories,
+} from "../../../data/constants";
+import {
+  clampTableWidth,
+  getTableWidth,
+  measureTableWidth,
+} from "../../../utils/utils";
+import { resolveType } from "../../../utils/customTypes";
 import TableField from "./TableField";
 import IndexDetails from "./IndexDetails";
 import UniqueConstraintDetails from "./UniqueConstraintDetails";
@@ -32,11 +49,13 @@ export default function TableInfo({ data }) {
   const [commentActiveKey, setCommentActiveKey] = useState("");
   const [showComment, setShowComment] = useState(false);
   const { layout } = useLayout();
+  const { settings } = useSettings();
   const { deleteTable, updateTable, setTables } = useDiagram();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { setSaveState } = useSaveState();
   const [editField, setEditField] = useState({});
   const initialColorRef = useRef(data.color);
+  const widthBeforeEditRef = useRef(data.width);
 
   const handleColorPick = (color) => {
     setUndoStack((prev) => {
@@ -142,6 +161,67 @@ export default function TableInfo({ data }) {
     });
   };
 
+  const width = getTableWidth(data, settings.tableWidth);
+
+  const commitCategory = (value) => {
+    if (layout.readOnly || value === data.category) return;
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.TABLE,
+        component: "self",
+        tid: data.id,
+        undo: { category: data.category },
+        redo: { category: value },
+        message: t("edit_table", {
+          tableName: data.name,
+          extra: "[category]",
+        }),
+      },
+    ]);
+    setRedoStack([]);
+    updateTable(data.id, { category: value });
+  };
+
+  const commitWidth = (from, to) => {
+    if (layout.readOnly || from === to) return;
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.TABLE,
+        component: "self",
+        tid: data.id,
+        undo: { width: from },
+        redo: { width: to },
+        message: t("edit_table", {
+          tableName: data.name,
+          extra: "[width]",
+        }),
+      },
+    ]);
+    setRedoStack([]);
+    updateTable(data.id, { width: to });
+  };
+
+  const fitWidthToContent = () =>
+    commitWidth(
+      data.width,
+      measureTableWidth(data, {
+        showDataTypes: settings.showDataTypes,
+        typeLabelOf: (field) => {
+          const resolved = resolveType(database, field.type);
+          return (
+            field.type +
+            ((resolved.isSized || resolved.hasPrecision) && field.size
+              ? `(${field.size})`
+              : "")
+          );
+        },
+      }),
+    );
+
   const addComment = () => {
     setShowComment(true);
     setCommentActiveKey("1");
@@ -179,6 +259,73 @@ export default function TableInfo({ data }) {
             setRedoStack([]);
           }}
         />
+      </div>
+
+      <div className="flex items-center gap-2 mb-2.5">
+        <div className="text-md font-semibold break-keep">{t("category")}:</div>
+        <Select
+          className="grow"
+          placeholder={t("no_category")}
+          optionList={tableCategories.map((category) => ({
+            label: category.toUpperCase(),
+            value: category,
+          }))}
+          value={data.category || undefined}
+          filter
+          allowCreate
+          showClear
+          disabled={layout.readOnly}
+          onChange={(value) => {
+            const next = value
+              ? String(value).trim().slice(0, maxTableCategoryLength)
+              : undefined;
+            commitCategory(next || undefined);
+          }}
+        />
+      </div>
+
+      <div className="flex items-center gap-2 mb-2.5">
+        <div className="text-md font-semibold break-keep">
+          {t("table_width")}:
+        </div>
+        <InputNumber
+          value={width}
+          min={minTableWidth}
+          max={maxTableWidth}
+          step={10}
+          className="w-[110px]"
+          disabled={layout.readOnly}
+          onChange={(value) => {
+            if (layout.readOnly) return;
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed)) return;
+            updateTable(data.id, { width: clampTableWidth(parsed) });
+          }}
+          onFocus={() => {
+            widthBeforeEditRef.current = data.width;
+          }}
+          onBlur={() => {
+            // data.width has already been updated live by onChange, so the undo
+            // value has to come from what it was when the input got focus.
+            commitWidth(widthBeforeEditRef.current, data.width);
+          }}
+        />
+        <Button
+          type="tertiary"
+          disabled={layout.readOnly}
+          onClick={fitWidthToContent}
+          title={t("auto_fit_width")}
+        >
+          {t("auto_fit_width")}
+        </Button>
+        <Button
+          type="tertiary"
+          disabled={layout.readOnly || data.width === undefined}
+          onClick={() => commitWidth(data.width, undefined)}
+          title={t("reset_width")}
+        >
+          {t("reset_width")}
+        </Button>
       </div>
 
       <SortableList

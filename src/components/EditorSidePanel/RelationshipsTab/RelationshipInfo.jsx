@@ -17,6 +17,7 @@ import {
   Constraint,
   Action,
   ObjectType,
+  RelationshipPathStyle,
 } from "../../../data/constants";
 import { useDiagram, useLayout, useUndoRedo } from "../../../hooks";
 import { getRelationshipFields } from "../../../utils/utils";
@@ -176,6 +177,48 @@ export default function RelationshipInfo({ data }) {
     updateRelationship(data.id, { cardinality: value });
   };
 
+  const changePathStyle = (value) => {
+    if (layout.readOnly) return;
+
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.RELATIONSHIP,
+        rid: data.id,
+        undo: { pathStyle: data.pathStyle ?? RelationshipPathStyle.ORTHOGONAL },
+        redo: { pathStyle: value },
+        message: t("edit_relationship", {
+          refName: data.name,
+          extra: "[shape]",
+        }),
+      },
+    ]);
+    setRedoStack([]);
+    updateRelationship(data.id, { pathStyle: value });
+  };
+
+  const resetRouting = () => {
+    if (layout.readOnly || !(data.waypoints?.length > 0)) return;
+
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.RELATIONSHIP,
+        rid: data.id,
+        undo: { waypoints: data.waypoints.map((p) => ({ ...p })) },
+        redo: { waypoints: [] },
+        message: t("edit_relationship", {
+          refName: data.name,
+          extra: "[reset routing]",
+        }),
+      },
+    ]);
+    setRedoStack([]);
+    updateRelationship(data.id, { waypoints: [] });
+  };
+
   const changeConstraint = (key, value) => {
     if (layout.readOnly) return;
 
@@ -260,6 +303,35 @@ export default function RelationshipInfo({ data }) {
         className="w-full"
         onChange={changeCardinality}
       />
+
+      <div className="font-semibold my-1">{t("line_shape")}:</div>
+      <div className="flex items-center gap-2">
+        <Select
+          optionList={[
+            {
+              label: t("line_orthogonal"),
+              value: RelationshipPathStyle.ORTHOGONAL,
+            },
+            {
+              label: t("line_straight"),
+              value: RelationshipPathStyle.STRAIGHT,
+            },
+            { label: t("line_curved"), value: RelationshipPathStyle.CURVED },
+          ]}
+          value={data.pathStyle ?? RelationshipPathStyle.ORTHOGONAL}
+          className="grow"
+          disabled={layout.readOnly}
+          onChange={changePathStyle}
+        />
+        <Button
+          type="tertiary"
+          onClick={resetRouting}
+          disabled={layout.readOnly || !(data.waypoints?.length > 0)}
+          title={t("reset_routing")}
+        >
+          {t("reset_routing")}
+        </Button>
+      </div>
 
       {data.cardinality !== Cardinality.ONE_TO_ONE && (
         <>

@@ -1,5 +1,5 @@
 import { graphlib, layout } from "@dagrejs/dagre";
-import { getTableHeight } from "./utils";
+import { getTableHeight, getTableWidth } from "./utils";
 
 const nodeSep = 60;
 const rankSep = 110;
@@ -21,15 +21,18 @@ export function autoArrange(tables, relationships, settings) {
     }
   }
 
-  const sizeOf = (table) => ({
-    width: settings.tableWidth,
-    height: getTableHeight(
-      table,
-      settings.tableWidth,
-      settings.showComments,
-      relationships,
-    ),
-  });
+  const sizeOf = (table) => {
+    const width = getTableWidth(table, settings.tableWidth);
+    return {
+      width,
+      height: getTableHeight(
+        table,
+        width,
+        settings.showComments,
+        relationships,
+      ),
+    };
+  };
 
   const connected = movable.filter((table) => connectedIds.has(table.id));
   const isolated = movable.filter((table) => !connectedIds.has(table.id));
