@@ -48,8 +48,6 @@ export default function TableInfo({ data }) {
   const { t } = useTranslation();
   const [indexActiveKey, setIndexActiveKey] = useState("");
   const [uniqueActiveKey, setUniqueActiveKey] = useState("");
-  const [commentActiveKey, setCommentActiveKey] = useState("");
-  const [showComment, setShowComment] = useState(false);
   const { layout } = useLayout();
   const { settings } = useSettings();
   const { deleteTable, updateTable, setTables } = useDiagram();
@@ -247,11 +245,6 @@ export default function TableInfo({ data }) {
       }),
     );
 
-  const addComment = () => {
-    setShowComment(true);
-    setCommentActiveKey("1");
-  };
-
   return (
     <div>
       <div className="flex items-center mb-2.5">
@@ -370,6 +363,37 @@ export default function TableInfo({ data }) {
           {t("reset_width")}
         </Button>
       </div>
+
+      <div className="text-md font-semibold break-keep">{t("comment")}:</div>
+      <TextArea
+        className="mt-1 mb-2.5"
+        value={data.comment}
+        readonly={layout.readOnly}
+        autosize
+        placeholder={t("comment")}
+        rows={2}
+        onChange={(value) => updateTable(data.id, { comment: value })}
+        onFocus={(e) => setEditField({ comment: e.target.value })}
+        onBlur={(e) => {
+          if (e.target.value === editField.comment) return;
+          setUndoStack((prev) => [
+            ...prev,
+            {
+              action: Action.EDIT,
+              element: ObjectType.TABLE,
+              component: "self",
+              tid: data.id,
+              undo: editField,
+              redo: { comment: e.target.value },
+              message: t("edit_table", {
+                tableName: data.name,
+                extra: "[comment]",
+              }),
+            },
+          ]);
+          setRedoStack([]);
+        }}
+      />
 
       <SortableList
         items={data.fields}
@@ -492,56 +516,6 @@ export default function TableInfo({ data }) {
         </Card>
       )}
 
-      {((data.comment && data.comment.trim() !== "") || showComment) && (
-        <Card
-          bodyStyle={{ padding: "4px" }}
-          style={{ marginTop: "12px", marginBottom: "12px" }}
-          headerLine={false}
-        >
-          <Collapse
-            activeKey={commentActiveKey}
-            onChange={(itemKey) => setCommentActiveKey(itemKey)}
-            keepDOM={false}
-            lazyRender
-            accordion
-          >
-            <Collapse.Panel header={t("comment")} itemKey="1">
-              <TextArea
-                field="comment"
-              value={data.comment}
-              readonly={layout.readOnly}
-              autosize
-              placeholder={t("comment")}
-              rows={1}
-              onChange={(value) =>
-                updateTable(data.id, { comment: value }, false)
-              }
-              onFocus={(e) => setEditField({ comment: e.target.value })}
-              onBlur={(e) => {
-                if (e.target.value === editField.comment) return;
-                setUndoStack((prev) => [
-                  ...prev,
-                  {
-                    action: Action.EDIT,
-                    element: ObjectType.TABLE,
-                    component: "self",
-                    tid: data.id,
-                    undo: editField,
-                    redo: { comment: e.target.value },
-                    message: t("edit_table", {
-                      tableName: e.target.value,
-                      extra: "[comment]",
-                    }),
-                  },
-                ]);
-                setRedoStack([]);
-              }}
-              />
-            </Collapse.Panel>
-          </Collapse>
-        </Card>
-      )}
-
       <div className="flex justify-between items-center gap-1 mt-5 mb-2">
         <ColorPicker
           usePopover={true}
@@ -556,9 +530,6 @@ export default function TableInfo({ data }) {
             trigger="click"
             render={
               <Dropdown.Menu>
-                <Dropdown.Item onClick={addComment}>
-                  {t("add_comment")}
-                </Dropdown.Item>
                 <Dropdown.Item onClick={addUniqueConstraint}>
                   {t("add_unique_constraint")}
                 </Dropdown.Item>
