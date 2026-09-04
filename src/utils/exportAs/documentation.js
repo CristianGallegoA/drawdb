@@ -58,11 +58,21 @@ export function jsonToDocumentation(obj) {
           field.id,
         ).join(", ");
 
-        return [`**${field.name}**`, fieldType, settings, references, field.comment ?? ""];
+        // A field with no owner of its own answers to the table's owner.
+        const owner = field.owner || table.owner || "";
+
+        return [
+          `**${field.name}**`,
+          fieldType,
+          settings,
+          references,
+          owner,
+          field.comment ?? "",
+        ];
       });
 
       const fieldsTable = formatMarkdownTable(
-        ["Name", "Type", "Settings", "References", "Note"],
+        ["Name", "Type", "Settings", "References", "Owner", "Note"],
         fieldRows,
       );
 
@@ -90,7 +100,9 @@ export function jsonToDocumentation(obj) {
       }
 
       return (
-        `### ${table.name}\n${table.comment ? table.comment : ""}\n` +
+        `### ${table.name}\n` +
+        `${table.owner ? `**Owner:** ${table.owner}\n\n` : ""}` +
+        `${table.comment ? table.comment : ""}\n` +
         `${fieldsTable} \n${enums.length > 0 ? "\n#### Enums\n" + enums : ""}\n` +
         indexesSection +
         uniqueConstraintsSection

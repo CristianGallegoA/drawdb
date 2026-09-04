@@ -171,6 +171,23 @@ export function clampTableWidth(width) {
   return Math.min(maxTableWidth, Math.max(minTableWidth, Math.round(width)));
 }
 
+/**
+ * Every owner already used in the diagram, for autocomplete. Suggesting what is
+ * in use keeps the same person from ending up spelled three different ways.
+ */
+export function collectOwners(tables = []) {
+  const owners = new Set();
+
+  for (const table of tables) {
+    if (table?.owner) owners.add(String(table.owner).trim());
+    for (const field of table?.fields ?? []) {
+      if (field?.owner) owners.add(String(field.owner).trim());
+    }
+  }
+
+  return [...owners].filter(Boolean).sort((a, b) => a.localeCompare(b));
+}
+
 // Kept apart from the comment measuring context: that one caches its font once
 // and reuses it for every measurement, so mutating the font here would corrupt
 // the comment height cache.

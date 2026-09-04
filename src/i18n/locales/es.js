@@ -77,6 +77,8 @@ const es = {
     coordinate_space_diagram: "Espacio de coordenadas de diagrama",
     table_width: "Ancho de la tabla",
     category: "Categoría",
+    owner: "Dueño",
+    inherited: "heredado",
     no_category: "Sin categoría",
     default_table_width: "Ancho de tabla por defecto",
     auto_fit_width: "Ajustar al contenido",

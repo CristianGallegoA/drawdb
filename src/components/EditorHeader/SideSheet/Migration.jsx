@@ -58,6 +58,11 @@ export default function Migration({
         "notes",
         "subjectAreas",
         "database",
+        // Documentation and layout metadata: no SQL counterpart.
+        "owner",
+        "category",
+        "pathStyle",
+        "waypoints",
       ];
 
       deepDiff(

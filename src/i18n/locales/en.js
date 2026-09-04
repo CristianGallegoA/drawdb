@@ -78,6 +78,8 @@ const en = {
     coordinate_space_diagram: "Diagram",
     table_width: "Table width",
     category: "Category",
+    owner: "Owner",
+    inherited: "inherited",
     no_category: "No category",
     default_table_width: "Default table width",
     auto_fit_width: "Fit to content",

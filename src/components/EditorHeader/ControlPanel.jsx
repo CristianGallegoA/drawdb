@@ -488,6 +488,7 @@ export default function ControlPanel({
                 notNull: false,
                 increment: false,
                 comment: "",
+                owner: "",
                 id: nanoid(),
               },
             ],

@@ -33,6 +33,7 @@ export function fromOracleSQL(ast, diagramDb = DB.GENERIC) {
         const table = {};
         table.name = e.name.name;
         table.comment = "";
+        table.owner = "";
         table.color = "#175e7a";
         table.fields = [];
         table.indices = [];
@@ -57,6 +58,7 @@ export function fromOracleSQL(ast, diagramDb = DB.GENERIC) {
             }
 
             field.comment = "";
+            field.owner = "";
             field.check = "";
             field.default = "";
             field.unique = false;

@@ -31,6 +31,7 @@ export function fromPostgres(ast, diagramDb = DB.GENERIC) {
         const table = {};
         table.name = e.table[0].table;
         table.comment = "";
+        table.owner = "";
         table.color = "#175e7a";
         table.fields = [];
         table.indices = [];
@@ -63,6 +64,7 @@ export function fromPostgres(ast, diagramDb = DB.GENERIC) {
               field.values = d.definition.expr.value.map((v) => v.value);
             }
             field.comment = d.comment ? d.comment.value.value : "";
+            field.owner = "";
             field.unique = false;
             if (d.unique) field.unique = true;
             field.increment = false;

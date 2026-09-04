@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
+  AutoComplete,
   Input,
   TextArea,
   Button,
@@ -13,6 +14,7 @@ import { useDiagram, useLayout, useUndoRedo } from "../../../hooks";
 import { useTranslation } from "react-i18next";
 import { databases } from "../../../data/databases";
 import { resolveType } from "../../../utils/customTypes";
+import { collectOwners } from "../../../utils/utils";
 
 export default function FieldDetails({ data, tid }) {
   const { t } = useTranslation();
@@ -22,7 +24,9 @@ export default function FieldDetails({ data, tid }) {
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { updateField, deleteField } = useDiagram();
   const [editField, setEditField] = useState({});
+  const ownerBeforeEditRef = useRef("");
   const table = useMemo(() => tables.find((t) => t.id === tid), [tables, tid]);
+  const ownerSuggestions = useMemo(() => collectOwners(tables), [tables]);
 
   return (
     <div>
@@ -350,6 +354,42 @@ export default function FieldDetails({ data, tid }) {
             />
           </div>
         )}
+      <div className="font-semibold">{t("owner")}</div>
+      <AutoComplete
+        className="my-2 w-full"
+        placeholder={table?.owner ? table.owner : t("owner")}
+        value={data.owner ?? ""}
+        data={ownerSuggestions}
+        disabled={layout.readOnly}
+        onChange={(value) => updateField(tid, data.id, { owner: value })}
+        onFocus={() => {
+          ownerBeforeEditRef.current = data.owner ?? "";
+        }}
+        onBlur={() => {
+          // onChange already wrote the value, so the undo entry has to come
+          // from what it was when the input got focus.
+          const before = ownerBeforeEditRef.current;
+          const after = data.owner ?? "";
+          if (before === after) return;
+          setUndoStack((prev) => [
+            ...prev,
+            {
+              action: Action.EDIT,
+              element: ObjectType.TABLE,
+              component: "field",
+              tid: tid,
+              fid: data.id,
+              undo: { owner: before },
+              redo: { owner: after },
+              message: t("edit_table", {
+                tableName: table.name,
+                extra: "[field]",
+              }),
+            },
+          ]);
+          setRedoStack([]);
+        }}
+      />
       <div className="font-semibold">{t("comment")}</div>
       <TextArea
         className="my-2"

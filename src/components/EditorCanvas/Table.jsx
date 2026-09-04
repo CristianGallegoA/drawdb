@@ -325,15 +325,21 @@ export default function Table({
             <div
               className={`overflow-hidden font-bold h-[40px] flex justify-between items-center gap-2`}
             >
-              <div className="px-3 min-w-0 flex-1 flex items-center gap-2">
-                <TableCategoryBadge
-                  category={tableData.category}
-                  color={tableData.color}
-                />
-                <span className="overflow-hidden text-ellipsis whitespace-nowrap">
-                  {tableData.name}
-                </span>
-              </div>
+              <TableSummaryPopover
+                enabled={settings.showFieldSummary}
+                tableData={tableData}
+                t={t}
+              >
+                <div className="px-3 min-w-0 flex-1 flex items-center gap-2">
+                  <TableCategoryBadge
+                    category={tableData.category}
+                    color={tableData.color}
+                  />
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                    {tableData.name}
+                  </span>
+                </div>
+              </TableSummaryPopover>
               <div className="hidden group-hover:flex items-center shrink-0 pe-2">
                 <ButtonGroup
                   type="tertiary"
@@ -504,6 +510,18 @@ export default function Table({
                     <p>
                       <strong>{t("default_value")}: </strong>
                       {e.default === "" ? t("not_set") : e.default}
+                    </p>
+                    <p>
+                      <strong>{t("owner")}: </strong>
+                      {e.owner ? (
+                        e.owner
+                      ) : tableData.owner ? (
+                        <span className="opacity-60">
+                          {tableData.owner} ({t("inherited")})
+                        </span>
+                      ) : (
+                        t("not_set")
+                      )}
                     </p>
                     <p className="max-w-80">
                       <strong>{t("comment")}: </strong>
@@ -727,4 +745,48 @@ export default function Table({
       </div>
     );
   }
+}
+
+/**
+ * Hover summary for the table itself: owner and comment, mirroring the per
+ * field summary. Only the name and category badge are wrapped, so the
+ * lock/collapse/menu buttons on the right of the header stay clickable.
+ */
+function TableSummaryPopover({ enabled, tableData, t, children }) {
+  if (!enabled) return children;
+
+  return (
+    <Popover
+      content={
+        <div className="popover-theme">
+          <div
+            className="flex items-center gap-2 pb-2"
+            style={{ direction: "ltr" }}
+          >
+            <TableCategoryBadge
+              category={tableData.category}
+              color={tableData.color}
+            />
+            <p className="font-bold">{tableData.name}</p>
+          </div>
+          <hr />
+          <p className="mt-2">
+            <strong>{t("owner")}: </strong>
+            {tableData.owner ? tableData.owner : t("not_set")}
+          </p>
+          <p className="max-w-80">
+            <strong>{t("comment")}: </strong>
+            {tableData.comment ? tableData.comment : t("not_set")}
+          </p>
+        </div>
+      }
+      position="top"
+      showArrow
+      style={
+        isRtl(i18n.language) ? { direction: "rtl" } : { direction: "ltr" }
+      }
+    >
+      {children}
+    </Popover>
+  );
 }

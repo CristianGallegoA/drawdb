@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
+import { useMemo, useState, useRef } from "react";
 import {
+  AutoComplete,
   Collapse,
   Input,
   InputNumber,
@@ -30,6 +31,7 @@ import {
 } from "../../../data/constants";
 import {
   clampTableWidth,
+  collectOwners,
   getTableWidth,
   measureTableWidth,
 } from "../../../utils/utils";
@@ -56,6 +58,7 @@ export default function TableInfo({ data }) {
   const [editField, setEditField] = useState({});
   const initialColorRef = useRef(data.color);
   const widthBeforeEditRef = useRef(data.width);
+  const ownerBeforeEditRef = useRef("");
 
   const handleColorPick = (color) => {
     setUndoStack((prev) => {
@@ -163,6 +166,28 @@ export default function TableInfo({ data }) {
 
   const width = getTableWidth(data, settings.tableWidth);
 
+  const ownerSuggestions = useMemo(() => collectOwners(tables), [tables]);
+
+  const commitOwner = (from, to) => {
+    if (layout.readOnly || from === to) return;
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.TABLE,
+        component: "self",
+        tid: data.id,
+        undo: { owner: from },
+        redo: { owner: to },
+        message: t("edit_table", {
+          tableName: data.name,
+          extra: "[owner]",
+        }),
+      },
+    ]);
+    setRedoStack([]);
+  };
+
   const commitCategory = (value) => {
     if (layout.readOnly || value === data.category) return;
     setUndoStack((prev) => [
@@ -257,6 +282,24 @@ export default function TableInfo({ data }) {
               },
             ]);
             setRedoStack([]);
+          }}
+        />
+      </div>
+
+      <div className="flex items-center gap-2 mb-2.5">
+        <div className="text-md font-semibold break-keep">{t("owner")}:</div>
+        <AutoComplete
+          className="grow"
+          placeholder={t("owner")}
+          value={data.owner ?? ""}
+          data={ownerSuggestions}
+          disabled={layout.readOnly}
+          onChange={(value) => updateTable(data.id, { owner: value })}
+          onFocus={() => {
+            ownerBeforeEditRef.current = data.owner ?? "";
+          }}
+          onBlur={() => {
+            commitOwner(ownerBeforeEditRef.current, data.owner ?? "");
           }}
         />
       </div>
@@ -565,6 +608,7 @@ export default function TableInfo({ data }) {
                     notNull: false,
                     increment: false,
                     comment: "",
+                    owner: "",
                   },
                 ],
               });

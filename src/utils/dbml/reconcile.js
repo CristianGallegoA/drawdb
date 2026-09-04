@@ -93,6 +93,7 @@ function createField(parsed) {
     notNull: parsed.notNull,
     increment: parsed.increment,
     comment: parsed.comment,
+    owner: "",
   };
 
   if (parsed.size !== "") field.size = parsed.size;
@@ -191,6 +192,7 @@ function createTable(parsed) {
     id: nanoid(),
     name: parsed.name,
     comment: parsed.comment,
+    owner: "",
     color: parsed.color ?? defaultBlue,
     fields: parsed.fields.map(createField),
     indices: parsed.indices.map((index, i) => ({
