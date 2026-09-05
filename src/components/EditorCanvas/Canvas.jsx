@@ -117,6 +117,9 @@ export default function Canvas() {
     panStart: { x: 0, y: 0 },
     cursorStart: { x: 0, y: 0 },
   });
+  // Hold space to turn the left button into a hand tool, the way every canvas
+  // editor does it. Middle and right drag already pan without it.
+  const [spaceHeld, setSpaceHeld] = useState(false);
   const [areaResize, setAreaResize] = useState({ id: -1, dir: "none" });
   const [areaInitDimensions, setAreaInitDimensions] = useState({
     x: 0,
@@ -463,6 +466,11 @@ export default function Canvas() {
     const isMouseMiddleButton = e.button === 1;
     const isMouseRightButton = e.button === 2;
 
+    if (isMouseLeftButton && spaceHeld) {
+      startPanning();
+      return;
+    }
+
     if (isMouseLeftButton) {
       setBulkSelectRect({
         x1: pointer.spaces.diagram.x,
@@ -479,15 +487,19 @@ export default function Canvas() {
       pointer.setStyle("crosshair");
     } else if (isMouseMiddleButton || isMouseRightButton) {
       if (isMouseRightButton) rightClickPanned.current = false;
-      setPanning({
-        isPanning: true,
-        panStart: transform.pan,
-        // Diagram space depends on the current panning.
-        // Use screen space to avoid circular dependencies and undefined behavior.
-        cursorStart: pointer.spaces.screen,
-      });
-      pointer.setStyle("grabbing");
+      startPanning();
     }
+  };
+
+  const startPanning = () => {
+    setPanning({
+      isPanning: true,
+      panStart: transform.pan,
+      // Diagram space depends on the current panning.
+      // Use screen space to avoid circular dependencies and undefined behavior.
+      cursorStart: pointer.spaces.screen,
+    });
+    pointer.setStyle("grabbing");
   };
 
   const isDragging = () => {
@@ -568,7 +580,7 @@ export default function Canvas() {
       if (e.button === 2) rightClickPanned.current = true;
     }
     setPanning((old) => ({ ...old, isPanning: false }));
-    pointer.setStyle("default");
+    pointer.setStyle(spaceHeld ? "grab" : "default");
 
     if (linking) handleLinking();
     setLinking(false);
@@ -680,6 +692,34 @@ export default function Canvas() {
     addRelationship(newRelationship);
   };
 
+  const isTypingTarget = (target) =>
+    target instanceof HTMLElement &&
+    (target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.isContentEditable);
+
+  useEventListener("keydown", (e) => {
+    if (e.code !== "Space" || e.repeat) return;
+    if (isTypingTarget(e.target)) return;
+    // Space would otherwise scroll the page or re-trigger the focused button.
+    e.preventDefault();
+    setSpaceHeld(true);
+    if (!panning.isPanning) pointer.setStyle("grab");
+  });
+
+  useEventListener("keyup", (e) => {
+    if (e.code !== "Space") return;
+    setSpaceHeld(false);
+    if (!panning.isPanning) pointer.setStyle("default");
+  });
+
+  // Alt-tabbing away while space is down would otherwise leave the hand tool on.
+  useEventListener("blur", () => {
+    if (!spaceHeld) return;
+    setSpaceHeld(false);
+    if (!panning.isPanning) pointer.setStyle("default");
+  });
+
   useEventListener(
     "wheel",
     (e) => {
@@ -703,18 +743,21 @@ export default function Canvas() {
           zoom: e.deltaY <= 0 ? prev.zoom * 1.05 : prev.zoom / 1.05,
         }));
       } else if (e.shiftKey) {
+        // A mouse wheel only reports deltaY, so shift maps it onto x.
         setTransform((prev) => ({
           ...prev,
           pan: {
             ...prev.pan,
-            x: prev.pan.x + e.deltaY / prev.zoom,
+            x: prev.pan.x + (e.deltaX || e.deltaY) / prev.zoom,
           },
         }));
       } else {
+        // Trackpads and tilt wheels report deltaX for sideways scrolling; a
+        // plain wheel leaves it at 0 and only pans vertically.
         setTransform((prev) => ({
           ...prev,
           pan: {
-            ...prev.pan,
+            x: prev.pan.x + e.deltaX / prev.zoom,
             y: prev.pan.y + e.deltaY / prev.zoom,
           },
         }));
@@ -727,7 +770,13 @@ export default function Canvas() {
   return (
     <div className="grow h-full touch-none" id="canvas">
       <div
-        className="w-full h-full"
+        className={`w-full h-full ${
+          panning.isPanning
+            ? "[&_*]:!cursor-grabbing"
+            : spaceHeld
+              ? "[&_*]:!cursor-grab"
+              : ""
+        }`}
         style={{
           cursor: pointer.style,
           backgroundColor: settings.mode === "dark" ? darkBgTheme : "white",
