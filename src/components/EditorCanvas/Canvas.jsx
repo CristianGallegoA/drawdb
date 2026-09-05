@@ -10,7 +10,7 @@ import {
   gridCircleRadius,
   minAreaSize,
 } from "../../data/constants";
-import { Toast } from "@douyinfe/semi-ui";
+import { Toast, Tooltip } from "@douyinfe/semi-ui";
 import Table from "./Table";
 import Area from "./Area";
 import Relationship from "./Relationship";
@@ -120,6 +120,10 @@ export default function Canvas() {
   // Hold space to turn the left button into a hand tool, the way every canvas
   // editor does it. Middle and right drag already pan without it.
   const [spaceHeld, setSpaceHeld] = useState(false);
+  // The same thing, latched on from the toolbar, for people who would rather
+  // not hold a key (or whose pointing device cannot scroll sideways at all).
+  const [handTool, setHandTool] = useState(false);
+  const panMode = handTool || spaceHeld;
   const [areaResize, setAreaResize] = useState({ id: -1, dir: "none" });
   const [areaInitDimensions, setAreaInitDimensions] = useState({
     x: 0,
@@ -466,7 +470,7 @@ export default function Canvas() {
     const isMouseMiddleButton = e.button === 1;
     const isMouseRightButton = e.button === 2;
 
-    if (isMouseLeftButton && spaceHeld) {
+    if (isMouseLeftButton && panMode) {
       startPanning();
       return;
     }
@@ -580,7 +584,7 @@ export default function Canvas() {
       if (e.button === 2) rightClickPanned.current = true;
     }
     setPanning((old) => ({ ...old, isPanning: false }));
-    pointer.setStyle(spaceHeld ? "grab" : "default");
+    pointer.setStyle(panMode ? "grab" : "default");
 
     if (linking) handleLinking();
     setLinking(false);
@@ -704,21 +708,23 @@ export default function Canvas() {
     // Space would otherwise scroll the page or re-trigger the focused button.
     e.preventDefault();
     setSpaceHeld(true);
-    if (!panning.isPanning) pointer.setStyle("grab");
   });
 
   useEventListener("keyup", (e) => {
     if (e.code !== "Space") return;
     setSpaceHeld(false);
-    if (!panning.isPanning) pointer.setStyle("default");
   });
 
-  // Alt-tabbing away while space is down would otherwise leave the hand tool on.
-  useEventListener("blur", () => {
-    if (!spaceHeld) return;
-    setSpaceHeld(false);
-    if (!panning.isPanning) pointer.setStyle("default");
-  });
+  // Alt-tabbing away while space is down would otherwise leave the hand on.
+  useEventListener("blur", () => setSpaceHeld(false));
+
+  // Single source of truth for the resting cursor; the drag handlers own it
+  // only while a pan is actually in progress.
+  const setPointerStyle = pointer.setStyle;
+  useEffect(() => {
+    if (panning.isPanning) return;
+    setPointerStyle(panMode ? "grab" : "default");
+  }, [panMode, panning.isPanning, setPointerStyle]);
 
   useEventListener(
     "wheel",
@@ -773,7 +779,7 @@ export default function Canvas() {
         className={`w-full h-full ${
           panning.isPanning
             ? "[&_*]:!cursor-grabbing"
-            : spaceHeld
+            : panMode
               ? "[&_*]:!cursor-grab"
               : ""
         }`}
@@ -890,6 +896,46 @@ export default function Canvas() {
             />
           )}
         </svg>
+      </div>
+      <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-1 rounded-lg p-1 popover-theme">
+        {[
+          {
+            active: !panMode,
+            icon: "bi-cursor",
+            label: t("select_tool"),
+            hint: t("select_tool_hint"),
+            onClick: () => setHandTool(false),
+          },
+          {
+            active: panMode,
+            icon: "bi-hand-index-thumb",
+            label: t("pan_tool"),
+            hint: t("pan_tool_hint"),
+            onClick: () => setHandTool(true),
+          },
+        ].map((tool) => (
+          <Tooltip
+            key={tool.icon}
+            position="right"
+            content={
+              <div>
+                <div className="font-semibold">{tool.label}</div>
+                <div className="text-xs opacity-80">{tool.hint}</div>
+              </div>
+            }
+          >
+            <button
+              aria-label={tool.label}
+              aria-pressed={tool.active}
+              className={`px-3 py-2 rounded-md ${
+                tool.active ? "bg-sky-600 text-white" : ""
+              }`}
+              onClick={tool.onClick}
+            >
+              <i className={`bi ${tool.icon}`} />
+            </button>
+          </Tooltip>
+        ))}
       </div>
       {settings.showDebugCoordinates && (
         <div className="fixed flex flex-col flex-wrap gap-6 bg-[rgba(var(--semi-grey-1),var(--tw-bg-opacity))]/40 border border-color bottom-4 right-4 p-4 rounded-xl backdrop-blur-xs pointer-events-none select-none">
