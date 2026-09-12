@@ -51,6 +51,7 @@ import {
   getVisibleFieldEntries,
   getVisibleFields,
   getRelationshipFields,
+  isTableVisible,
 } from "../../utils/utils";
 
 export default function Table({
@@ -286,7 +287,7 @@ export default function Table({
     updateTable(tableData.id, { width: fitted });
   };
 
-  if (tableData.hidden) return null;
+  if (!isTableVisible(tableData, settings.hiddenCategories)) return null;
 
   return (
     <>

@@ -10,7 +10,7 @@ import {
   gridCircleRadius,
   minAreaSize,
 } from "../../data/constants";
-import { Toast, Tooltip } from "@douyinfe/semi-ui";
+import { Divider, Popover, Toast, Tooltip } from "@douyinfe/semi-ui";
 import Table from "./Table";
 import Area from "./Area";
 import Relationship from "./Relationship";
@@ -32,9 +32,13 @@ import { useTranslation } from "react-i18next";
 import { useEventListener } from "usehooks-ts";
 import {
   areFieldsCompatible,
+  collectCategories,
   getTableHeight,
   getTableWidth,
+  isTableVisible,
+  UNCATEGORIZED,
 } from "../../utils/utils";
+import { aggregateBlockLinks, blocksFromCategories } from "../../utils/blocks";
 import { getRectFromEndpoints, isInsideRect } from "../../utils/rect";
 import { State, noteWidth } from "../../data/constants";
 import { nanoid } from "nanoid";
@@ -52,10 +56,10 @@ export default function Canvas() {
   const { tables, updateTable, relationships, addRelationship, database } =
     useDiagram();
   const { setSaveState } = useSaveState();
-  const { areas, updateArea } = useAreas();
+  const { areas, setAreas, updateArea } = useAreas();
   const { notes, updateNote } = useNotes();
   const { layout } = useLayout();
-  const { settings } = useSettings();
+  const { settings, setSettings } = useSettings();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { transform, setTransform } = useTransform();
   const {
@@ -164,6 +168,8 @@ export default function Canvas() {
 
     tables.forEach((table) => {
       if (table.locked) return;
+      // A table you cannot see should not land in a rubber band selection.
+      if (!isTableVisible(table, settings.hiddenCategories)) return;
 
       const element = {
         id: table.id,
@@ -494,6 +500,68 @@ export default function Canvas() {
       startPanning();
     }
   };
+
+  const categories = collectCategories(tables);
+  const hiddenCategories = settings.hiddenCategories ?? [];
+
+  const toggleCategory = (category) => {
+    setSettings((prev) => {
+      const hidden = prev.hiddenCategories ?? [];
+      return {
+        ...prev,
+        hiddenCategories: hidden.includes(category)
+          ? hidden.filter((c) => c !== category)
+          : [...hidden, category],
+      };
+    });
+  };
+
+  const showAllCategories = () =>
+    setSettings((prev) => ({ ...prev, hiddenCategories: [] }));
+
+  const toggleBusinessView = () =>
+    setSettings((prev) => ({ ...prev, businessView: !prev.businessView }));
+
+  const generateBlocks = () => {
+    if (layout.readOnly) return;
+
+    const result = blocksFromCategories(tables, areas, {
+      tableWidth: settings.tableWidth,
+      showComments: settings.showComments,
+      relationships,
+    });
+
+    if (result.created === 0 && result.refitted === 0) {
+      Toast.info(t("no_categories_for_blocks"));
+      return;
+    }
+
+    // One snapshot rather than an entry per area: the generator rewrites
+    // several at once and area ids are array indices.
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.AREA,
+        component: "bulk",
+        undo: areas.map((area) => ({ ...area })),
+        redo: result.areas,
+        message: t("generate_blocks"),
+      },
+    ]);
+    setRedoStack([]);
+    setAreas(result.areas);
+    Toast.success(
+      t("blocks_generated", {
+        created: result.created,
+        refitted: result.refitted,
+      }),
+    );
+  };
+
+  const blockLinks = settings.businessView
+    ? aggregateBlockLinks(tables, relationships, areas)
+    : [];
 
   const startPanning = () => {
     setPanning({
@@ -847,24 +915,58 @@ export default function Canvas() {
               }}
             />
           ))}
-          {relationships.map((e) => (
-            <Relationship key={e.id} data={e} />
-          ))}
-          {tables.map((table) => (
-            <Table
-              key={table.id}
-              tableData={table}
-              setHoveredTable={setHoveredTable}
-              handleGripField={handleGripField}
-              setLinkingLine={setLinkingLine}
-              onPointerDown={() => {
-                elementPointerDown = {
-                  element: table,
-                  type: ObjectType.TABLE,
-                };
-              }}
-            />
-          ))}
+          {/* Business view drops to block level: the blocks above stay, the
+              tables and their individual relationships give way to one link
+              per pair of blocks. */}
+          {settings.businessView
+            ? blockLinks.map((link) => (
+                <g key={link.id} className="pointer-events-none select-none">
+                  <line
+                    x1={link.start.x}
+                    y1={link.start.y}
+                    x2={link.end.x}
+                    y2={link.end.y}
+                    className="relationship-path"
+                    strokeWidth={2}
+                  />
+                  <circle
+                    cx={link.label.x}
+                    cy={link.label.y}
+                    r={13}
+                    fill="grey"
+                  />
+                  <text
+                    x={link.label.x}
+                    y={link.label.y}
+                    fill="white"
+                    textAnchor="middle"
+                    alignmentBaseline="middle"
+                    fontSize={13}
+                    fontWeight={600}
+                  >
+                    {link.count}
+                  </text>
+                </g>
+              ))
+            : relationships.map((e) => (
+                <Relationship key={e.id} data={e} />
+              ))}
+          {!settings.businessView &&
+            tables.map((table) => (
+              <Table
+                key={table.id}
+                tableData={table}
+                setHoveredTable={setHoveredTable}
+                handleGripField={handleGripField}
+                setLinkingLine={setLinkingLine}
+                onPointerDown={() => {
+                  elementPointerDown = {
+                    element: table,
+                    type: ObjectType.TABLE,
+                  };
+                }}
+              />
+            ))}
           {linking && (
             <path
               d={`M ${linkingLine.startX} ${linkingLine.startY} L ${linkingLine.endX} ${linkingLine.endY}`}
@@ -936,6 +1038,103 @@ export default function Canvas() {
             </button>
           </Tooltip>
         ))}
+
+        <Popover
+          position="right"
+          trigger="click"
+          content={
+            <div className="popover-theme flex flex-col py-1 min-w-[200px]">
+              <div className="px-2 pb-1 text-xs opacity-70">
+                {t("categories")}
+              </div>
+              {categories.map(({ category, count }) => {
+                const off = hiddenCategories.includes(category);
+                return (
+                  <button
+                    key={category || UNCATEGORIZED}
+                    className="px-2 py-1.5 rounded-md flex items-center gap-2"
+                    onClick={() => toggleCategory(category)}
+                  >
+                    <i
+                      className={`bi ${off ? "bi-eye-slash" : "bi-eye"} ${
+                        off ? "opacity-50" : ""
+                      }`}
+                    />
+                    <span
+                      className={`grow text-start ${off ? "opacity-50 line-through" : ""}`}
+                    >
+                      {category === UNCATEGORIZED
+                        ? t("no_category")
+                        : category.toUpperCase()}
+                    </span>
+                    <span className="text-xs opacity-60">{count}</span>
+                  </button>
+                );
+              })}
+              {hiddenCategories.length > 0 && (
+                <>
+                  <Divider className="!my-1" />
+                  <button
+                    className="px-2 py-1.5 text-start rounded-md"
+                    onClick={showAllCategories}
+                  >
+                    {t("show_all_categories")}
+                  </button>
+                </>
+              )}
+            </div>
+          }
+        >
+          <button
+            aria-label={t("categories")}
+            title={t("categories")}
+            className={`px-3 py-2 rounded-md ${
+              hiddenCategories.length > 0 ? "bg-sky-600 text-white" : ""
+            }`}
+          >
+            <i className="bi bi-eye" />
+          </button>
+        </Popover>
+
+        <Popover
+          position="right"
+          trigger="click"
+          content={
+            <div className="popover-theme flex flex-col py-1 min-w-[220px]">
+              <div className="px-2 pb-1 text-xs opacity-70">
+                {t("business_view_hint")}
+              </div>
+              <button
+                className={`px-2 py-1.5 text-start rounded-md ${
+                  settings.businessView ? "bg-sky-600 text-white" : ""
+                }`}
+                onClick={toggleBusinessView}
+              >
+                {settings.businessView
+                  ? t("business_view_on")
+                  : t("business_view_off")}
+              </button>
+              <Divider className="!my-1" />
+              <button
+                className="px-2 py-1.5 text-start rounded-md"
+                onClick={generateBlocks}
+                disabled={layout.readOnly}
+              >
+                {t("generate_blocks")}
+              </button>
+            </div>
+          }
+        >
+          <button
+            aria-label={t("business_view")}
+            title={t("business_view")}
+            className={`px-3 py-2 rounded-md ${
+              settings.businessView ? "bg-sky-600 text-white" : ""
+            }`}
+          >
+            <i className="bi bi-bounding-box" />
+          </button>
+        </Popover>
       </div>
       {settings.showDebugCoordinates && (
         <div className="fixed flex flex-col flex-wrap gap-6 bg-[rgba(var(--semi-grey-1),var(--tw-bg-opacity))]/40 border border-color bottom-4 right-4 p-4 rounded-xl backdrop-blur-xs pointer-events-none select-none">

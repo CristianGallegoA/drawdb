@@ -171,6 +171,38 @@ export function clampTableWidth(width) {
   return Math.min(maxTableWidth, Math.max(minTableWidth, Math.round(width)));
 }
 
+export const UNCATEGORIZED = "";
+
+/**
+ * A table is off the canvas either because it was hidden one by one, or
+ * because its whole category is muted from the toolbar.
+ */
+export function isTableVisible(table, hiddenCategories = []) {
+  if (!table || table.hidden) return false;
+  return !hiddenCategories.includes(table.category ?? UNCATEGORIZED);
+}
+
+/**
+ * The categories actually present in the diagram, with how many tables each
+ * holds. Tables without one are reported under an empty name.
+ */
+export function collectCategories(tables = []) {
+  const counts = new Map();
+
+  for (const table of tables) {
+    const category = table?.category ?? UNCATEGORIZED;
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => {
+      if (a.category === UNCATEGORIZED) return 1;
+      if (b.category === UNCATEGORIZED) return -1;
+      return a.category.localeCompare(b.category);
+    });
+}
+
 /**
  * Every owner already used in the diagram, for autocomplete. Suggesting what is
  * in use keeps the same person from ending up spelled three different ways.

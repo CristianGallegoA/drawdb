@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Button, Input } from "@douyinfe/semi-ui";
+import { Button, Input, TextArea } from "@douyinfe/semi-ui";
 import ColorPicker from "../ColorPicker";
 import { IconDeleteStroked } from "@douyinfe/semi-icons";
 import { useAreas, useLayout, useUndoRedo } from "../../../hooks";
@@ -50,15 +50,58 @@ export default function AreaInfo({ data, i }) {
   };
 
   return (
-    <div id={`scroll_area_${data.id}`} className="my-3 flex gap-2 items-center">
-      <Input
-        value={data.name}
-        placeholder={t("name")}
+    <div id={`scroll_area_${data.id}`} className="my-3">
+      <div className="flex gap-2 items-center">
+        <Input
+          value={data.name}
+          placeholder={t("name")}
+          readonly={layout.readOnly}
+          onChange={(value) => updateArea(data.id, { name: value })}
+          onFocus={(e) => setEditField({ name: e.target.value })}
+          onBlur={(e) => {
+            if (e.target.value === editField.name) return;
+            setUndoStack((prev) => [
+              ...prev,
+              {
+                action: Action.EDIT,
+                element: ObjectType.AREA,
+                aid: i,
+                undo: editField,
+                redo: { name: e.target.value },
+                message: t("edit_area", {
+                  areaName: e.target.value,
+                  extra: "[name]",
+                }),
+              },
+            ]);
+            setRedoStack([]);
+          }}
+        />
+        <ColorPicker
+          usePopover={true}
+          value={data.color}
+          readOnly={layout.readOnly}
+          onChange={(color) => updateArea(i, { color })}
+          onColorPick={(color) => handleColorPick(color)}
+        />
+        <Button
+          type="danger"
+          disabled={layout.readOnly}
+          icon={<IconDeleteStroked />}
+          onClick={() => deleteArea(i, true)}
+        />
+      </div>
+      <TextArea
+        className="mt-2"
+        value={data.description ?? ""}
+        placeholder={t("block_description_placeholder")}
+        autosize
+        rows={2}
         readonly={layout.readOnly}
-        onChange={(value) => updateArea(data.id, { name: value })}
-        onFocus={(e) => setEditField({ name: e.target.value })}
+        onChange={(value) => updateArea(data.id, { description: value })}
+        onFocus={(e) => setEditField({ description: e.target.value })}
         onBlur={(e) => {
-          if (e.target.value === editField.name) return;
+          if (e.target.value === editField.description) return;
           setUndoStack((prev) => [
             ...prev,
             {
@@ -66,28 +109,15 @@ export default function AreaInfo({ data, i }) {
               element: ObjectType.AREA,
               aid: i,
               undo: editField,
-              redo: { name: e.target.value },
+              redo: { description: e.target.value },
               message: t("edit_area", {
-                areaName: e.target.value,
-                extra: "[name]",
+                areaName: data.name,
+                extra: "[description]",
               }),
             },
           ]);
           setRedoStack([]);
         }}
-      />
-      <ColorPicker
-        usePopover={true}
-        value={data.color}
-        readOnly={layout.readOnly}
-        onChange={(color) => updateArea(i, { color })}
-        onColorPick={(color) => handleColorPick(color)}
-      />
-      <Button
-        type="danger"
-        disabled={layout.readOnly}
-        icon={<IconDeleteStroked />}
-        onClick={() => deleteArea(i, true)}
       />
     </div>
   );

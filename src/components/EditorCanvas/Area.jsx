@@ -4,6 +4,7 @@ import {
   ButtonGroup,
   Popover,
   Input,
+  TextArea,
   Divider,
 } from "@douyinfe/semi-ui";
 import ColorPicker from "../EditorSidePanel/ColorPicker";
@@ -172,8 +173,25 @@ export default function Area({
           onDoubleClick={edit}
         >
           <div className="flex justify-between gap-1 w-full">
-            <div className="text-color select-none overflow-hidden text-ellipsis">
-              {data.name}
+            <div className="min-w-0 flex-1">
+              <div
+                className={`text-color select-none overflow-hidden text-ellipsis ${
+                  settings.businessView ? "text-lg font-semibold" : ""
+                }`}
+              >
+                {data.name}
+              </div>
+              {data.description && (
+                <div
+                  className={`text-color select-none mt-1 pe-2 ${
+                    settings.businessView
+                      ? "text-sm opacity-90 whitespace-pre-wrap"
+                      : "text-xs opacity-80 line-clamp-2"
+                  }`}
+                >
+                  {data.description}
+                </div>
+              )}
             </div>
             {(isHovered || (areaIsOpen() && !layout.sidebar)) && (
               <ButtonGroup
@@ -342,6 +360,35 @@ function EditPopoverContent({ data }) {
           value={data.color}
           onChange={(color) => updateArea(data.id, { color })}
           onColorPick={(color) => handleColorPick(color)}
+        />
+      </div>
+      <div className="w-[280px] mb-2">
+        <TextArea
+          value={data.description ?? ""}
+          placeholder={t("block_description_placeholder")}
+          autosize
+          rows={3}
+          readonly={layout.readOnly}
+          onChange={(value) => updateArea(data.id, { description: value })}
+          onFocus={(e) => setEditField({ description: e.target.value })}
+          onBlur={(e) => {
+            if (e.target.value === editField.description) return;
+            setUndoStack((prev) => [
+              ...prev,
+              {
+                action: Action.EDIT,
+                element: ObjectType.AREA,
+                aid: data.id,
+                undo: editField,
+                redo: { description: e.target.value },
+                message: t("edit_area", {
+                  areaName: data.name,
+                  extra: "[description]",
+                }),
+              },
+            ]);
+            setRedoStack([]);
+          }}
         />
       </div>
       <Divider />

@@ -94,6 +94,8 @@ export const areaSchema = {
     height: { type: "number" },
     locked: { type: "boolean" },
     color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+    description: { type: "string" },
+    category: { type: "string" },
   },
   required: ["id", "name", "x", "y", "width", "height", "color"],
 };

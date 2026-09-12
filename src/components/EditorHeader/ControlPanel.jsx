@@ -256,7 +256,10 @@ export default function ControlPanel({
       setRedoStack((prev) => [...prev, a]);
     } else if (a.action === Action.EDIT) {
       if (a.element === ObjectType.AREA) {
-        updateArea(a.aid, a.undo);
+        // Generating blocks rewrites several areas at once, so it carries a
+        // whole snapshot instead of one area's fields.
+        if (a.component === "bulk") setAreas(a.undo);
+        else updateArea(a.aid, a.undo);
       } else if (a.element === ObjectType.NOTE) {
         updateNote(a.nid, a.undo);
       } else if (a.element === ObjectType.TABLE) {
@@ -465,7 +468,8 @@ export default function ControlPanel({
       setUndoStack((prev) => [...prev, a]);
     } else if (a.action === Action.EDIT) {
       if (a.element === ObjectType.AREA) {
-        updateArea(a.aid, a.redo);
+        if (a.component === "bulk") setAreas(a.redo);
+        else updateArea(a.aid, a.redo);
       } else if (a.element === ObjectType.NOTE) {
         updateNote(a.nid, a.redo);
       } else if (a.element === ObjectType.TABLE) {

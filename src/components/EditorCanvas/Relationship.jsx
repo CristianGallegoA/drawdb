@@ -29,6 +29,7 @@ import {
   getVisibleFields,
   getRelationshipFields,
   getTableWidth,
+  isTableVisible,
 } from "../../utils/utils";
 
 const labelFontSize = 16;
@@ -61,8 +62,12 @@ export default function Relationship({ data }) {
     const startTable = tables.find((t) => t.id === data.startTableId);
     const endTable = tables.find((t) => t.id === data.endTableId);
 
-    if (!startTable || !endTable || startTable.hidden || endTable.hidden)
+    if (
+      !isTableVisible(startTable, settings.hiddenCategories) ||
+      !isTableVisible(endTable, settings.hiddenCategories)
+    ) {
       return null;
+    }
 
     const startFields = getVisibleFields(startTable, relationships);
     const endFields = getVisibleFields(endTable, relationships);
@@ -101,7 +106,13 @@ export default function Relationship({ data }) {
         width: getTableWidth(endTable, settings.tableWidth),
       },
     };
-  }, [tables, relationships, data, settings.tableWidth]);
+  }, [
+    tables,
+    relationships,
+    data,
+    settings.tableWidth,
+    settings.hiddenCategories,
+  ]);
 
   const isComposite = (pathValues?.startFieldIndices?.length ?? 0) > 1;
 
