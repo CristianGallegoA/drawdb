@@ -15,12 +15,21 @@ import {
   IconUnlock,
 } from "@douyinfe/semi-icons";
 import { Tab, Action, ObjectType, State } from "../../data/constants";
+import TableCategoryBadge from "../TableCategoryBadge";
+import {
+  cardContentHeight,
+  isCard,
+  isLayer,
+  layerTableCount,
+  tablesOfCard,
+} from "../../utils/blocks";
 import {
   useLayout,
   useSettings,
   useUndoRedo,
   useSelect,
   useAreas,
+  useDiagram,
   useSaveState,
 } from "../../hooks";
 import { useTranslation } from "react-i18next";
@@ -36,8 +45,10 @@ export default function Area({
   const isHovered = useHover(ref);
   const { layout } = useLayout();
   const { settings } = useSettings();
+  const { tables } = useDiagram();
   const { setSaveState } = useSaveState();
-  const { updateArea } = useAreas();
+  const { areas, updateArea } = useAreas();
+  const { t } = useTranslation();
   const {
     selectedElement,
     setSelectedElement,
@@ -151,6 +162,14 @@ export default function Area({
     );
   }, [selectedElement, data, bulkSelectedElements]);
 
+  const cardTables = isCard(data) ? tablesOfCard(tables, data) : [];
+  // The stored height is a floor: a card grows rather than clipping the very
+  // thing it exists to show.
+  const height = isCard(data)
+    ? Math.max(data.height, cardContentHeight(data, tables))
+    : data.height;
+  const tableCount = isLayer(data) ? layerTableCount(tables, areas, data) : 0;
+
   return (
     <g ref={ref}>
       <foreignObject
@@ -158,39 +177,82 @@ export default function Area({
         x={data.x}
         y={data.y}
         width={data.width > 0 ? data.width : 0}
-        height={data.height > 0 ? data.height : 0}
+        height={height > 0 ? height : 0}
         onPointerDown={onPointerDown}
       >
         <div
-          className={`w-full h-full p-2 rounded cursor-move border-2 ${
+          className={`w-full h-full p-2 cursor-move border-2 ${
+            isLayer(data) ? "rounded-lg border-dashed" : "rounded"
+          } ${
             isHovered
               ? "border-dashed border-blue-500"
               : isSelected
                 ? "border-blue-500 opacity-100"
-                : "border-slate-400 opacity-100"
+                : isLayer(data)
+                  ? "opacity-100"
+                  : "border-slate-400 opacity-100"
           }`}
-          style={{ backgroundColor: `${data.color}66` }}
+          style={{
+            // A layer is a frame around cards, so it stays unfilled; anything
+            // else carries a wash of its own color.
+            backgroundColor: isLayer(data) ? "transparent" : `${data.color}66`,
+            ...(isLayer(data) && !isHovered && !isSelected
+              ? { borderColor: data.color }
+              : {}),
+          }}
           onDoubleClick={edit}
         >
           <div className="flex justify-between gap-1 w-full">
             <div className="min-w-0 flex-1">
+              {isCard(data) && data.category && (
+                <div className="mb-1">
+                  <TableCategoryBadge
+                    category={data.category}
+                    color={data.color}
+                  />
+                </div>
+              )}
               <div
                 className={`text-color select-none overflow-hidden text-ellipsis ${
-                  settings.businessView ? "text-lg font-semibold" : ""
+                  isLayer(data)
+                    ? "text-sm font-semibold tracking-wide"
+                    : settings.businessView || isCard(data)
+                      ? "text-lg font-semibold"
+                      : ""
                 }`}
+                style={isLayer(data) ? { color: data.color } : {}}
               >
                 {data.name}
+                {isLayer(data) && (
+                  <span className="font-normal opacity-80">
+                    {"  —  "}
+                    {t("table_count", { count: tableCount })}
+                  </span>
+                )}
               </div>
               {data.description && (
                 <div
                   className={`text-color select-none mt-1 pe-2 ${
-                    settings.businessView
+                    settings.businessView || isCard(data)
                       ? "text-sm opacity-90 whitespace-pre-wrap"
                       : "text-xs opacity-80 line-clamp-2"
                   }`}
                 >
                   {data.description}
                 </div>
+              )}
+              {isCard(data) && cardTables.length > 0 && (
+                <ul className="mt-2 select-none">
+                  {cardTables.map((table) => (
+                    <li
+                      key={table.id}
+                      className="text-color text-xs font-mono opacity-90 leading-[18px] overflow-hidden text-ellipsis whitespace-nowrap"
+                    >
+                      {"\u00b7 "}
+                      {table.name}
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
             {(isHovered || (areaIsOpen() && !layout.sidebar)) && (

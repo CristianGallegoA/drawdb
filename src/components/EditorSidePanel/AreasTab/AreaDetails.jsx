@@ -1,8 +1,9 @@
 import { useState, useRef } from "react";
-import { Button, Input, TextArea } from "@douyinfe/semi-ui";
+import { Button, Input, Select, TextArea } from "@douyinfe/semi-ui";
 import ColorPicker from "../ColorPicker";
 import { IconDeleteStroked } from "@douyinfe/semi-icons";
-import { useAreas, useLayout, useUndoRedo } from "../../../hooks";
+import { useAreas, useDiagram, useLayout, useUndoRedo } from "../../../hooks";
+import { CARD, LAYER, isCard, tablesOfCard } from "../../../utils/blocks";
 import { Action, ObjectType } from "../../../data/constants";
 import { useTranslation } from "react-i18next";
 
@@ -10,6 +11,7 @@ export default function AreaInfo({ data, i }) {
   const { t } = useTranslation();
   const { layout } = useLayout();
   const { deleteArea, updateArea } = useAreas();
+  const { tables } = useDiagram();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const [editField, setEditField] = useState({});
   const initialColorRef = useRef(data.color);
@@ -90,6 +92,43 @@ export default function AreaInfo({ data, i }) {
           icon={<IconDeleteStroked />}
           onClick={() => deleteArea(i, true)}
         />
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <Select
+          className="grow"
+          value={data.kind ?? ""}
+          disabled={layout.readOnly}
+          optionList={[
+            { label: t("plain_area"), value: "" },
+            { label: t("make_card"), value: CARD },
+            { label: t("make_layer"), value: LAYER },
+          ]}
+          onChange={(value) => {
+            const kind = value || undefined;
+            if (kind === data.kind) return;
+            setUndoStack((prev) => [
+              ...prev,
+              {
+                action: Action.EDIT,
+                element: ObjectType.AREA,
+                aid: i,
+                undo: { kind: data.kind },
+                redo: { kind },
+                message: t("edit_area", {
+                  areaName: data.name,
+                  extra: "[kind]",
+                }),
+              },
+            ]);
+            setRedoStack([]);
+            updateArea(data.id, { kind });
+          }}
+        />
+        {isCard(data) && (
+          <span className="text-xs opacity-70 shrink-0">
+            {t("table_count", { count: tablesOfCard(tables, data).length })}
+          </span>
+        )}
       </div>
       <TextArea
         className="mt-2"

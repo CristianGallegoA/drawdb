@@ -11,6 +11,20 @@ const BLOCK_PADDING = 36;
 // Extra room at the top so the block name and description never sit on a table.
 const BLOCK_HEADER_ROOM = 44;
 
+export const CARD = "card";
+export const LAYER = "layer";
+
+export const isCard = (area) => area?.kind === CARD;
+export const isLayer = (area) => area?.kind === LAYER;
+
+// A card written from scratch, before the designer resizes it.
+const CARD_WIDTH = 320;
+// Vertical budget of a card's chrome: badge, title, padding.
+const CARD_CHROME_HEIGHT = 74;
+const CARD_LINE_HEIGHT = 18;
+const CARD_DESCRIPTION_LINE_HEIGHT = 17;
+const CARD_PADDING_X = 28;
+
 /**
  * Bounding box of a set of tables, grown so the block reads as a container
  * rather than a tight outline.
@@ -79,17 +93,20 @@ export function blocksFromCategories(tables, areas, options = {}) {
     if (!bounds) continue;
 
     const existing = next.find((area) => area.category === category);
+    const tableIds = members.map((table) => table.id);
 
     if (existing) {
-      Object.assign(existing, bounds);
+      Object.assign(existing, bounds, { kind: CARD, tableIds });
       refitted++;
       continue;
     }
 
     next.push({
       id: next.length,
+      kind: CARD,
       name: category.toUpperCase(),
       category,
+      tableIds,
       description: "",
       color: members[0]?.color ?? defaultBlue,
       locked: false,
@@ -186,4 +203,139 @@ export function tablesInBlock(tables, area, hiddenCategories = []) {
       (table.category ?? UNCATEGORIZED) === area.category &&
       isTableVisible(table, hiddenCategories),
   );
+}
+
+/**
+ * The tables a card lists, resolved fresh from the model on every read. That is
+ * the whole point of the card: adding a table to the diagram makes it show up
+ * here on its own, instead of rotting like a hand typed list.
+ *
+ * Ids of tables that no longer exist are skipped rather than rendered blank.
+ */
+export function tablesOfCard(tables, card) {
+  const ids = card?.tableIds;
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+
+  const byId = new Map(tables.map((table) => [table.id, table]));
+  return ids.map((id) => byId.get(id)).filter(Boolean);
+}
+
+/**
+ * Height a card's content asks for: badge and title, the wrapped description,
+ * and one row per table. The stored height is only a floor, so a card never
+ * clips what it is supposed to communicate.
+ */
+export function cardContentHeight(card, tables, measureLines) {
+  const rows = tablesOfCard(tables, card).length;
+  const width = Math.max(card?.width ?? CARD_WIDTH, 120) - CARD_PADDING_X;
+
+  const descriptionLines = card?.description
+    ? typeof measureLines === "function"
+      ? measureLines(card.description, width)
+      : card.description.split("\n").length
+    : 0;
+
+  return Math.round(
+    CARD_CHROME_HEIGHT +
+      descriptionLines * CARD_DESCRIPTION_LINE_HEIGHT +
+      rows * CARD_LINE_HEIGHT,
+  );
+}
+
+/**
+ * A new card built from whatever tables are selected on the canvas.
+ *
+ * A table belongs to exactly one card, so the selection is taken away from any
+ * card that already held it. That single rule is what makes splitting a
+ * category into two cards a one gesture operation.
+ */
+export function cardFromSelection(tables, areas, tableIds, options = {}) {
+  const { name = "", description = "", at } = options;
+
+  const members = tables.filter((table) => tableIds.includes(table.id));
+  if (members.length === 0) return { areas, card: null };
+
+  const memberIds = new Set(members.map((table) => table.id));
+
+  // Take the selection away from every other card.
+  const next = areas.map((area) =>
+    isCard(area) && Array.isArray(area.tableIds)
+      ? {
+          ...area,
+          tableIds: area.tableIds.filter((id) => !memberIds.has(id)),
+        }
+      : { ...area },
+  );
+
+  const categories = new Set(
+    members.map((table) => table.category ?? UNCATEGORIZED),
+  );
+  const category = categories.size === 1 ? [...categories][0] : "";
+
+  const card = {
+    id: next.length,
+    kind: CARD,
+    name: name || category.toUpperCase() || "",
+    category,
+    tableIds: members.map((table) => table.id),
+    description,
+    color: members[0]?.color ?? defaultBlue,
+    locked: false,
+    x: Math.round(at?.x ?? Math.min(...members.map((t) => t.x))),
+    y: Math.round(at?.y ?? Math.min(...members.map((t) => t.y))),
+    width: CARD_WIDTH,
+    height: 0,
+  };
+  card.height = cardContentHeight(card, tables);
+
+  next.push(card);
+
+  return {
+    areas: next.map((area, i) => ({ ...area, id: i })),
+    card,
+  };
+}
+
+/**
+ * The cards sitting inside a layer. Geometric containment is enough here: the
+ * designer places the layer around the cards, so what looks inside is inside.
+ */
+export function layerMembers(areas, layer) {
+  if (!isLayer(layer)) return [];
+
+  return areas.filter((area) => {
+    if (!isCard(area)) return false;
+    const center = centerOf(area);
+    return (
+      center.x >= layer.x &&
+      center.x <= layer.x + layer.width &&
+      center.y >= layer.y &&
+      center.y <= layer.y + layer.height
+    );
+  });
+}
+
+/**
+ * How many tables a layer covers, for the "— 14 tablas" label. Counted through
+ * a set so a table listed twice by mistake is not counted twice.
+ */
+export function layerTableCount(tables, areas, layer) {
+  const ids = new Set();
+  for (const card of layerMembers(areas, layer)) {
+    for (const table of tablesOfCard(tables, card)) ids.add(table.id);
+  }
+  return ids.size;
+}
+
+/**
+ * Tables no card lists. The safety net of explicit membership: without it a
+ * table added later would quietly never appear in the business view.
+ */
+export function tablesWithoutCard(tables, areas) {
+  const covered = new Set();
+  for (const area of areas) {
+    if (!isCard(area)) continue;
+    for (const id of area.tableIds ?? []) covered.add(id);
+  }
+  return tables.filter((table) => !covered.has(table.id));
 }

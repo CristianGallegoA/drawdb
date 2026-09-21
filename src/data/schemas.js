@@ -96,6 +96,8 @@ export const areaSchema = {
     color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
     description: { type: "string" },
     category: { type: "string" },
+    kind: { type: "string" },
+    tableIds: { type: "array", items: { type: ["integer", "string"] } },
   },
   required: ["id", "name", "x", "y", "width", "height", "color"],
 };

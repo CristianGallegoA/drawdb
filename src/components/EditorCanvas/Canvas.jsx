@@ -38,7 +38,16 @@ import {
   isTableVisible,
   UNCATEGORIZED,
 } from "../../utils/utils";
-import { aggregateBlockLinks, blocksFromCategories } from "../../utils/blocks";
+import {
+  aggregateBlockLinks,
+  blocksFromCategories,
+  cardFromSelection,
+  isCard,
+  isLayer,
+  CARD,
+  LAYER,
+  tablesWithoutCard,
+} from "../../utils/blocks";
 import { getRectFromEndpoints, isInsideRect } from "../../utils/rect";
 import { State, noteWidth } from "../../data/constants";
 import { nanoid } from "nanoid";
@@ -559,6 +568,60 @@ export default function Canvas() {
     );
   };
 
+  const selectedTableIds = bulkSelectedElements
+    .filter((el) => el.type === ObjectType.TABLE)
+    .map((el) => el.id);
+
+  const selectedArea =
+    selectedElement.element === ObjectType.AREA
+      ? areas.find((a) => a.id === selectedElement.id)
+      : null;
+
+  const orphanTables = tablesWithoutCard(tables, areas);
+
+  const commitAreas = (nextAreas, message) => {
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.AREA,
+        component: "bulk",
+        undo: areas.map((area) => ({ ...area })),
+        redo: nextAreas,
+        message,
+      },
+    ]);
+    setRedoStack([]);
+    setAreas(nextAreas);
+  };
+
+  const createCardFromSelection = () => {
+    if (layout.readOnly || selectedTableIds.length === 0) return;
+
+    const result = cardFromSelection(tables, areas, selectedTableIds);
+    if (!result.card) return;
+
+    commitAreas(result.areas, t("create_card"));
+    setBulkSelectedElements([]);
+    setSelectedElement((prev) => ({
+      ...prev,
+      element: ObjectType.AREA,
+      id: result.card.id,
+      open: false,
+    }));
+    Toast.success(t("card_created", { count: result.card.tableIds.length }));
+  };
+
+  const setAreaKind = (kind) => {
+    if (layout.readOnly || !selectedArea) return;
+    commitAreas(
+      areas.map((area) =>
+        area.id === selectedArea.id ? { ...area, kind } : { ...area },
+      ),
+      t("edit_area", { areaName: selectedArea.name, extra: "[kind]" }),
+    );
+  };
+
   const blockLinks = settings.businessView
     ? aggregateBlockLinks(tables, relationships, areas)
     : [];
@@ -901,20 +964,24 @@ export default function Canvas() {
               />
             </>
           )}
-          {areas.map((a) => (
-            <Area
-              key={a.id}
-              data={a}
-              setResize={setAreaResize}
-              setInitDimensions={setAreaInitDimensions}
-              onPointerDown={() => {
-                elementPointerDown = {
-                  element: a,
-                  type: ObjectType.AREA,
-                };
-              }}
-            />
-          ))}
+          {/* Layers frame cards, so they are painted first no matter where they
+              sit in the stored array. */}
+          {[...areas]
+            .sort((a, b) => (isLayer(a) ? 0 : 1) - (isLayer(b) ? 0 : 1))
+            .map((a) => (
+              <Area
+                key={a.id}
+                data={a}
+                setResize={setAreaResize}
+                setInitDimensions={setAreaInitDimensions}
+                onPointerDown={() => {
+                  elementPointerDown = {
+                    element: a,
+                    type: ObjectType.AREA,
+                  };
+                }}
+              />
+            ))}
           {/* Business view drops to block level: the blocks above stay, the
               tables and their individual relationships give way to one link
               per pair of blocks. */}
@@ -948,9 +1015,7 @@ export default function Canvas() {
                   </text>
                 </g>
               ))
-            : relationships.map((e) => (
-                <Relationship key={e.id} data={e} />
-              ))}
+            : relationships.map((e) => <Relationship key={e.id} data={e} />)}
           {!settings.businessView &&
             tables.map((table) => (
               <Table
@@ -1116,12 +1181,54 @@ export default function Canvas() {
               </button>
               <Divider className="!my-1" />
               <button
+                className="px-2 py-1.5 text-start rounded-md disabled:opacity-40"
+                onClick={createCardFromSelection}
+                disabled={layout.readOnly || selectedTableIds.length === 0}
+              >
+                {selectedTableIds.length > 0
+                  ? t("create_card_from_selection", {
+                      count: selectedTableIds.length,
+                    })
+                  : t("select_tables_first")}
+              </button>
+              <button
                 className="px-2 py-1.5 text-start rounded-md"
                 onClick={generateBlocks}
                 disabled={layout.readOnly}
               >
                 {t("generate_blocks")}
               </button>
+              {selectedArea && (
+                <>
+                  <Divider className="!my-1" />
+                  <button
+                    className={`px-2 py-1.5 text-start rounded-md ${
+                      isCard(selectedArea) ? "bg-sky-600 text-white" : ""
+                    }`}
+                    onClick={() => setAreaKind(CARD)}
+                    disabled={layout.readOnly}
+                  >
+                    {t("make_card")}
+                  </button>
+                  <button
+                    className={`px-2 py-1.5 text-start rounded-md ${
+                      isLayer(selectedArea) ? "bg-sky-600 text-white" : ""
+                    }`}
+                    onClick={() => setAreaKind(LAYER)}
+                    disabled={layout.readOnly}
+                  >
+                    {t("make_layer")}
+                  </button>
+                </>
+              )}
+              {orphanTables.length > 0 && (
+                <>
+                  <Divider className="!my-1" />
+                  <div className="px-2 py-1 text-xs opacity-70">
+                    {t("tables_without_card", { count: orphanTables.length })}
+                  </div>
+                </>
+              )}
             </div>
           }
         >
