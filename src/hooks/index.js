@@ -14,3 +14,5 @@ export { default as useEnums } from "./useEnums";
 export { default as useThemedPage } from "./useThemedPage";
 export { default as useNavigateWithParams } from "./useNavigateWithParams";
 export { default as useCollab } from "./useCollab";
+export { default as useView } from "./useView";
+export { default as useViewNavigation } from "./useViewNavigation";

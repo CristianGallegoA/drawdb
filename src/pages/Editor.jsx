@@ -1,4 +1,5 @@
 import LayoutContextProvider from "../context/LayoutContext";
+import ViewContextProvider from "../context/ViewContext";
 import TransformContextProvider from "../context/TransformContext";
 import TablesContextProvider from "../context/DiagramContext";
 import UndoRedoContextProvider from "../context/UndoRedoContext";
@@ -18,25 +19,27 @@ export default function Editor() {
   return (
     <SettingsContextProvider>
       <LayoutContextProvider>
-        <TransformContextProvider>
-          <UndoRedoContextProvider>
-            <SelectContextProvider>
-              <AreasContextProvider>
-                <NotesContextProvider>
-                  <TypesContextProvider>
-                    <EnumsContextProvider>
-                      <TablesContextProvider>
-                        <SaveStateContextProvider>
-                          <WorkSpace />
-                        </SaveStateContextProvider>
-                      </TablesContextProvider>
-                    </EnumsContextProvider>
-                  </TypesContextProvider>
-                </NotesContextProvider>
-              </AreasContextProvider>
-            </SelectContextProvider>
-          </UndoRedoContextProvider>
-        </TransformContextProvider>
+        <ViewContextProvider>
+          <TransformContextProvider>
+            <UndoRedoContextProvider>
+              <SelectContextProvider>
+                <AreasContextProvider>
+                  <NotesContextProvider>
+                    <TypesContextProvider>
+                      <EnumsContextProvider>
+                        <TablesContextProvider>
+                          <SaveStateContextProvider>
+                            <WorkSpace />
+                          </SaveStateContextProvider>
+                        </TablesContextProvider>
+                      </EnumsContextProvider>
+                    </TypesContextProvider>
+                  </NotesContextProvider>
+                </AreasContextProvider>
+              </SelectContextProvider>
+            </UndoRedoContextProvider>
+          </TransformContextProvider>
+        </ViewContextProvider>
       </LayoutContextProvider>
     </SettingsContextProvider>
   );

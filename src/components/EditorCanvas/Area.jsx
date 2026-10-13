@@ -20,6 +20,7 @@ import {
   cardContentHeight,
   isCard,
   isLayer,
+  isOverviewArea,
   layerTableCount,
   tablesOfCard,
 } from "../../utils/blocks";
@@ -31,6 +32,7 @@ import {
   useAreas,
   useDiagram,
   useSaveState,
+  useViewNavigation,
 } from "../../hooks";
 import { useTranslation } from "react-i18next";
 import { useHover } from "usehooks-ts";
@@ -48,6 +50,7 @@ export default function Area({
   const { tables } = useDiagram();
   const { setSaveState } = useSaveState();
   const { areas, updateArea } = useAreas();
+  const { drillDown } = useViewNavigation();
   const { t } = useTranslation();
   const {
     selectedElement,
@@ -193,30 +196,46 @@ export default function Area({
                   : "border-slate-400 opacity-100"
           }`}
           style={{
-            // A layer is a frame around cards, so it stays unfilled; anything
-            // else carries a wash of its own color.
-            backgroundColor: isLayer(data) ? "transparent" : `${data.color}66`,
-            ...(isLayer(data) && !isHovered && !isSelected
+            // A layer is a frame around cards, so it stays unfilled; a card
+            // reads like the draw.io ones (a light tint); a plain area keeps
+            // its heavier wash.
+            backgroundColor: isLayer(data)
+              ? "transparent"
+              : `${data.color}${isCard(data) ? "26" : "66"}`,
+            ...(isOverviewArea(data) && !isHovered && !isSelected
               ? { borderColor: data.color }
               : {}),
           }}
-          onDoubleClick={edit}
+          onDoubleClick={
+            isCard(data) && layout.readOnly ? () => drillDown(data) : edit
+          }
         >
           <div className="flex justify-between gap-1 w-full">
             <div className="min-w-0 flex-1">
-              {isCard(data) && data.category && (
-                <div className="mb-1">
-                  <TableCategoryBadge
-                    category={data.category}
-                    color={data.color}
-                  />
+              {isCard(data) && (
+                <div className="mb-1 flex items-center gap-2">
+                  {data.category && (
+                    <TableCategoryBadge
+                      category={data.category}
+                      color={data.color}
+                    />
+                  )}
+                  <button
+                    className="ms-auto text-xs opacity-70 hover:opacity-100"
+                    title={t("show_detail")}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => drillDown(data)}
+                  >
+                    {t("show_detail")}{" "}
+                    <i className="bi bi-box-arrow-in-down-right" />
+                  </button>
                 </div>
               )}
               <div
                 className={`text-color select-none overflow-hidden text-ellipsis ${
                   isLayer(data)
                     ? "text-sm font-semibold tracking-wide"
-                    : settings.businessView || isCard(data)
+                    : isCard(data)
                       ? "text-lg font-semibold"
                       : ""
                 }`}
@@ -233,7 +252,7 @@ export default function Area({
               {data.description && (
                 <div
                   className={`text-color select-none mt-1 pe-2 ${
-                    settings.businessView || isCard(data)
+                    isCard(data)
                       ? "text-sm opacity-90 whitespace-pre-wrap"
                       : "text-xs opacity-80 line-clamp-2"
                   }`}
@@ -246,10 +265,17 @@ export default function Area({
                   {cardTables.map((table) => (
                     <li
                       key={table.id}
-                      className="text-color text-xs font-mono opacity-90 leading-[18px] overflow-hidden text-ellipsis whitespace-nowrap"
+                      className="leading-[18px] overflow-hidden text-ellipsis whitespace-nowrap"
                     >
-                      {"\u00b7 "}
-                      {table.name}
+                      <button
+                        className="text-color text-xs font-mono opacity-90 hover:opacity-100 hover:underline"
+                        title={t("show_detail")}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => drillDown(data, table.id)}
+                      >
+                        {"\u00b7 "}
+                        {table.name}
+                      </button>
                     </li>
                   ))}
                 </ul>

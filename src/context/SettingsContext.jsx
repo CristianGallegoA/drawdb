@@ -19,7 +19,6 @@ const defaultSettings = {
   // Which table categories are muted on the canvas. A viewing preference, not
   // diagram data, so toggling one never dirties the document.
   hiddenCategories: [],
-  businessView: false,
 };
 
 export const SettingsContext = createContext({

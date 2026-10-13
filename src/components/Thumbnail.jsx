@@ -46,7 +46,9 @@ export default function Thumbnail({ diagram, i, zoom, theme }) {
           transform: `scale(${zoom})`,
         }}
       >
-        {diagram.subjectAreas?.map((a) => (
+        {diagram.subjectAreas
+          ?.filter((a) => a.kind !== "card" && a.kind !== "layer")
+          .map((a) => (
           <foreignObject
             key={a.id}
             x={a.x}

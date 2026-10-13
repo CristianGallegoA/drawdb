@@ -35,6 +35,13 @@ export const RelationshipPathStyle = {
   CURVED: "curved",
 };
 
+// Which level of the diagram is on screen. A navigation concern, never stored
+// on the document: the overview is a second lens on the same tables.
+export const View = {
+  DETAIL: "detail",
+  OVERVIEW: "overview",
+};
+
 export const Cardinality = {
   ONE_TO_ONE: "one_to_one",
   ONE_TO_MANY: "one_to_many",

@@ -94,6 +94,25 @@ export default function AreasContextProvider({ children }) {
     }
   };
 
+  // Overview edits usually touch several areas at once (a table moving between
+  // two cards, a regenerated overview), so they undo as one snapshot. Area ids
+  // are array indices, so a per-area entry would not survive a reindex.
+  const commitAreas = (next, message) => {
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.EDIT,
+        element: ObjectType.AREA,
+        component: "bulk",
+        undo: areas.map((area) => ({ ...area })),
+        redo: next,
+        message,
+      },
+    ]);
+    setRedoStack([]);
+    setAreas(next);
+  };
+
   const updateArea = (id, values) => {
     setAreas((prev) =>
       prev.map((t) => {
@@ -122,6 +141,7 @@ export default function AreasContextProvider({ children }) {
         areas,
         setAreas,
         updateArea,
+        commitAreas,
         addArea,
         deleteArea,
         areasCount: areas.length,

@@ -5,7 +5,14 @@ import {
   defaultNoteTheme,
   noteWidth,
 } from "../data/constants";
-import { useUndoRedo, useTransform, useSelect, useCollab } from "../hooks";
+import {
+  useUndoRedo,
+  useTransform,
+  useSelect,
+  useCollab,
+  useView,
+} from "../hooks";
+import { View } from "../data/constants";
 import { Toast } from "@douyinfe/semi-ui";
 import { useTranslation } from "react-i18next";
 
@@ -15,6 +22,7 @@ export default function NotesContextProvider({ children }) {
   const { t } = useTranslation();
   const [notes, setNotes] = useState([]);
   const { transform } = useTransform();
+  const { view } = useView();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { selectedElement, setSelectedElement } = useSelect();
   const { emitDelta, isApplyingRemoteRef } = useCollab();
@@ -40,6 +48,9 @@ export default function NotesContextProvider({ children }) {
         color: defaultNoteTheme,
         height,
         width: noteWidth,
+        // A note belongs to the level it was created on; the detail is the
+        // default, so detail notes stay plain.
+        ...(view === View.OVERVIEW && { view }),
       };
       setNotes((prev) => [...prev, { ...created, id: prev.length }]);
     }

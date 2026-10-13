@@ -67,7 +67,10 @@ import {
   useEnums,
   useFullscreen,
   useNavigateWithParams,
+  useView,
 } from "../../hooks";
+import { isOverviewArea } from "../../utils/blocks";
+import { View } from "../../data/constants";
 import { enterFullscreen, exitFullscreen } from "../../utils/fullscreen";
 import { dataURItoBlob } from "../../utils/utils";
 import { IconAddArea, IconAddNote, IconAddTable } from "../../icons";
@@ -154,6 +157,7 @@ export default function ControlPanel({
   const { undoStack, redoStack, setUndoStack, setRedoStack } = useUndoRedo();
   const { selectedElement, setSelectedElement } = useSelect();
   const { transform, setTransform } = useTransform();
+  const { view } = useView();
   const { t, i18n } = useTranslation();
   const { version, gistId, setGistId } = useContext(IdContext);
   const isTemplate = useMatch("/editor/templates/:id");
@@ -637,9 +641,12 @@ export default function ControlPanel({
   };
   const resetView = () =>
     setTransform((prev) => ({ ...prev, zoom: 1, pan: { x: 0, y: 0 } }));
-  const fitWindow = () => fitToView(tables);
+  // The overview has no tables of its own, so framing it is just its blocks.
+  const fitWindow = () =>
+    fitToView(view === View.OVERVIEW ? [] : tables);
   const fitToView = (tablesToFit) => {
     const canvas = document.getElementById("canvas").getBoundingClientRect();
+    const isOverview = view === View.OVERVIEW;
 
     const minMaxXY = {
       minX: Infinity,
@@ -660,14 +667,20 @@ export default function ControlPanel({
       );
     });
 
-    areas.forEach((area) => {
-      minMaxXY.minX = Math.min(minMaxXY.minX, area.x);
-      minMaxXY.minY = Math.min(minMaxXY.minY, area.y);
-      minMaxXY.maxX = Math.max(minMaxXY.maxX, area.x + area.width);
-      minMaxXY.maxY = Math.max(minMaxXY.maxY, area.y + area.height);
-    });
+    // Each level frames only its own areas: blocks and cards in the overview,
+    // plain areas in the detail.
+    areas
+      .filter((area) => isOverviewArea(area) === isOverview)
+      .forEach((area) => {
+        minMaxXY.minX = Math.min(minMaxXY.minX, area.x);
+        minMaxXY.minY = Math.min(minMaxXY.minY, area.y);
+        minMaxXY.maxX = Math.max(minMaxXY.maxX, area.x + area.width);
+        minMaxXY.maxY = Math.max(minMaxXY.maxY, area.y + area.height);
+      });
 
-    notes.forEach((note) => {
+    notes
+      .filter((note) => (note.view ?? View.DETAIL) === view)
+      .forEach((note) => {
       minMaxXY.minX = Math.min(minMaxXY.minX, note.x);
       minMaxXY.minY = Math.min(minMaxXY.minY, note.y);
       minMaxXY.maxX = Math.max(

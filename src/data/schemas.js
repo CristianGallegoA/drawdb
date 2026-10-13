@@ -97,7 +97,20 @@ export const areaSchema = {
     description: { type: "string" },
     category: { type: "string" },
     kind: { type: "string" },
+    key: { type: "string" },
     tableIds: { type: "array", items: { type: ["integer", "string"] } },
+    links: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          to: { type: "string" },
+          label: { type: "string" },
+          dashed: { type: "boolean" },
+        },
+        required: ["to"],
+      },
+    },
   },
   required: ["id", "name", "x", "y", "width", "height", "color"],
 };
@@ -114,6 +127,7 @@ export const noteSchema = {
     height: { type: "number" },
     width: { type: "number" },
     locked: { type: "boolean" },
+    view: { type: "string" },
   },
   required: ["id", "x", "y", "title", "content", "color", "height"],
 };

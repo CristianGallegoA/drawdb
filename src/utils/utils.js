@@ -171,6 +171,16 @@ export function clampTableWidth(width) {
   return Math.min(maxTableWidth, Math.max(minTableWidth, Math.round(width)));
 }
 
+/**
+ * Whether an event's target is a place the user is typing, so canvas shortcuts
+ * (space to pan, arrows to step) stay out of the way of text entry.
+ */
+export const isTypingTarget = (target) =>
+  target instanceof HTMLElement &&
+  (target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.isContentEditable);
+
 export const UNCATEGORIZED = "";
 
 /**

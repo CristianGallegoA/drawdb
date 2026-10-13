@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Slot } from "../../context/ExtensionsContext";
 import {
   Action,
@@ -9,12 +9,16 @@ import {
   gridSize,
   gridCircleRadius,
   minAreaSize,
+  View,
 } from "../../data/constants";
 import { Divider, Popover, Toast, Tooltip } from "@douyinfe/semi-ui";
 import Table from "./Table";
 import Area from "./Area";
 import Relationship from "./Relationship";
 import Note from "./Note";
+import ViewBar from "./ViewBar";
+import OverviewToolbar from "./OverviewToolbar";
+import OverviewLinks from "./OverviewLinks";
 import {
   useCanvas,
   useSettings,
@@ -27,6 +31,7 @@ import {
   useLayout,
   useSaveState,
   useCollab,
+  useView,
 } from "../../hooks";
 import { useTranslation } from "react-i18next";
 import { useEventListener } from "usehooks-ts";
@@ -36,18 +41,17 @@ import {
   getTableHeight,
   getTableWidth,
   isTableVisible,
+  isTypingTarget,
   UNCATEGORIZED,
 } from "../../utils/utils";
 import {
-  aggregateBlockLinks,
-  blocksFromCategories,
-  cardFromSelection,
+  focusScene,
   isCard,
   isLayer,
-  CARD,
-  LAYER,
-  tablesWithoutCard,
+  isOverviewArea,
+  layerMembers,
 } from "../../utils/blocks";
+import { DiagramContext } from "../../context/DiagramContext";
 import { getRectFromEndpoints, isInsideRect } from "../../utils/rect";
 import { State, noteWidth } from "../../data/constants";
 import { nanoid } from "nanoid";
@@ -62,15 +66,50 @@ export default function Canvas() {
     pointer,
   } = canvasContextValue;
 
+  const diagram = useDiagram();
   const { tables, updateTable, relationships, addRelationship, database } =
-    useDiagram();
+    diagram;
+  const { view, focusKey } = useView();
+  const isOverview = view === View.OVERVIEW;
   const { setSaveState } = useSaveState();
-  const { areas, setAreas, updateArea } = useAreas();
+  const { areas, updateArea } = useAreas();
   const { notes, updateNote } = useNotes();
   const { layout } = useLayout();
   const { settings, setSettings } = useSettings();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { transform, setTransform } = useTransform();
+
+  // Overview is a second lens: the same areas split into those that live in the
+  // overview (blocks, cards) and those that live in the detail.
+  const overviewAreas = useMemo(() => areas.filter(isOverviewArea), [areas]);
+  const detailAreas = useMemo(
+    () => areas.filter((area) => !isOverviewArea(area)),
+    [areas],
+  );
+  const cards = useMemo(() => overviewAreas.filter(isCard), [overviewAreas]);
+  const layers = useMemo(() => overviewAreas.filter(isLayer), [overviewAreas]);
+
+  // Drilling into a card redraws only its tables, arranged on their own. The
+  // scene is computed, never written back, so it disturbs no stored layout.
+  const focusCard = useMemo(
+    () => (focusKey ? cards.find((card) => card.key === focusKey) : null),
+    [focusKey, cards],
+  );
+  const scene = useMemo(
+    () =>
+      focusCard ? focusScene(tables, relationships, focusCard, settings) : null,
+    [focusCard, tables, relationships, settings],
+  );
+  const canvasTables = scene ?? tables;
+  // A card lens follows the scene; everywhere else the diagram is itself.
+  const diagramValue = useMemo(
+    () => (scene ? { ...diagram, tables: canvasTables } : diagram),
+    [scene, diagram, canvasTables],
+  );
+  const visibleNotes = useMemo(
+    () => notes.filter((note) => (note.view ?? View.DETAIL) === view),
+    [notes, view],
+  );
   const {
     selectedElement,
     setSelectedElement,
@@ -175,7 +214,15 @@ export default function Canvas() {
       );
     };
 
-    tables.forEach((table) => {
+    // Only what the current level draws can land in a rubber band selection.
+    const selectableTables = isOverview ? [] : tables;
+    const selectableAreas = isOverview
+      ? overviewAreas
+      : scene
+        ? []
+        : detailAreas;
+
+    selectableTables.forEach((table) => {
       if (table.locked) return;
       // A table you cannot see should not land in a rubber band selection.
       if (!isTableVisible(table, settings.hiddenCategories)) return;
@@ -203,7 +250,7 @@ export default function Canvas() {
       }
     });
 
-    areas.forEach((area) => {
+    selectableAreas.forEach((area) => {
       if (area.locked) return;
 
       const element = {
@@ -223,7 +270,7 @@ export default function Canvas() {
       }
     });
 
-    notes.forEach((note) => {
+    visibleNotes.forEach((note) => {
       if (note.locked) return;
 
       const element = {
@@ -312,7 +359,20 @@ export default function Canvas() {
     }
 
     if (!isSelected) {
-      setBulkSelectedElements([elementInBulk]);
+      // A block drags the cards sitting in it, so composing the overview is
+      // moving five blocks instead of eleven cards one by one.
+      const riders =
+        type === ObjectType.AREA && isLayer(element)
+          ? layerMembers(areas, element)
+              .filter((card) => !card.locked)
+              .map((card) => ({
+                id: card.id,
+                type: ObjectType.AREA,
+                currentCoords: { x: card.x, y: card.y },
+                initialCoords: { x: card.x, y: card.y },
+              }))
+          : [];
+      setBulkSelectedElements([elementInBulk, ...riders]);
     }
     setDragging({
       id: element.id,
@@ -528,104 +588,6 @@ export default function Canvas() {
   const showAllCategories = () =>
     setSettings((prev) => ({ ...prev, hiddenCategories: [] }));
 
-  const toggleBusinessView = () =>
-    setSettings((prev) => ({ ...prev, businessView: !prev.businessView }));
-
-  const generateBlocks = () => {
-    if (layout.readOnly) return;
-
-    const result = blocksFromCategories(tables, areas, {
-      tableWidth: settings.tableWidth,
-      showComments: settings.showComments,
-      relationships,
-    });
-
-    if (result.created === 0 && result.refitted === 0) {
-      Toast.info(t("no_categories_for_blocks"));
-      return;
-    }
-
-    // One snapshot rather than an entry per area: the generator rewrites
-    // several at once and area ids are array indices.
-    setUndoStack((prev) => [
-      ...prev,
-      {
-        action: Action.EDIT,
-        element: ObjectType.AREA,
-        component: "bulk",
-        undo: areas.map((area) => ({ ...area })),
-        redo: result.areas,
-        message: t("generate_blocks"),
-      },
-    ]);
-    setRedoStack([]);
-    setAreas(result.areas);
-    Toast.success(
-      t("blocks_generated", {
-        created: result.created,
-        refitted: result.refitted,
-      }),
-    );
-  };
-
-  const selectedTableIds = bulkSelectedElements
-    .filter((el) => el.type === ObjectType.TABLE)
-    .map((el) => el.id);
-
-  const selectedArea =
-    selectedElement.element === ObjectType.AREA
-      ? areas.find((a) => a.id === selectedElement.id)
-      : null;
-
-  const orphanTables = tablesWithoutCard(tables, areas);
-
-  const commitAreas = (nextAreas, message) => {
-    setUndoStack((prev) => [
-      ...prev,
-      {
-        action: Action.EDIT,
-        element: ObjectType.AREA,
-        component: "bulk",
-        undo: areas.map((area) => ({ ...area })),
-        redo: nextAreas,
-        message,
-      },
-    ]);
-    setRedoStack([]);
-    setAreas(nextAreas);
-  };
-
-  const createCardFromSelection = () => {
-    if (layout.readOnly || selectedTableIds.length === 0) return;
-
-    const result = cardFromSelection(tables, areas, selectedTableIds);
-    if (!result.card) return;
-
-    commitAreas(result.areas, t("create_card"));
-    setBulkSelectedElements([]);
-    setSelectedElement((prev) => ({
-      ...prev,
-      element: ObjectType.AREA,
-      id: result.card.id,
-      open: false,
-    }));
-    Toast.success(t("card_created", { count: result.card.tableIds.length }));
-  };
-
-  const setAreaKind = (kind) => {
-    if (layout.readOnly || !selectedArea) return;
-    commitAreas(
-      areas.map((area) =>
-        area.id === selectedArea.id ? { ...area, kind } : { ...area },
-      ),
-      t("edit_area", { areaName: selectedArea.name, extra: "[kind]" }),
-    );
-  };
-
-  const blockLinks = settings.businessView
-    ? aggregateBlockLinks(tables, relationships, areas)
-    : [];
-
   const startPanning = () => {
     setPanning({
       isPanning: true,
@@ -827,12 +789,6 @@ export default function Canvas() {
     addRelationship(newRelationship);
   };
 
-  const isTypingTarget = (target) =>
-    target instanceof HTMLElement &&
-    (target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.isContentEditable);
-
   useEventListener("keydown", (e) => {
     if (e.code !== "Space" || e.repeat) return;
     if (isTypingTarget(e.target)) return;
@@ -964,74 +920,76 @@ export default function Canvas() {
               />
             </>
           )}
-          {/* Layers frame cards, so they are painted first no matter where they
-              sit in the stored array. */}
-          {[...areas]
-            .sort((a, b) => (isLayer(a) ? 0 : 1) - (isLayer(b) ? 0 : 1))
-            .map((a) => (
-              <Area
-                key={a.id}
-                data={a}
-                setResize={setAreaResize}
-                setInitDimensions={setAreaInitDimensions}
-                onPointerDown={() => {
-                  elementPointerDown = {
-                    element: a,
-                    type: ObjectType.AREA,
-                  };
-                }}
-              />
-            ))}
-          {/* Business view drops to block level: the blocks above stay, the
-              tables and their individual relationships give way to one link
-              per pair of blocks. */}
-          {settings.businessView
-            ? blockLinks.map((link) => (
-                <g key={link.id} className="pointer-events-none select-none">
-                  <line
-                    x1={link.start.x}
-                    y1={link.start.y}
-                    x2={link.end.x}
-                    y2={link.end.y}
-                    className="relationship-path"
-                    strokeWidth={2}
+          {isOverview ? (
+            <>
+              {/* Blocks frame cards, so they are painted first; the arrows run
+                  over the block background but under the cards, like draw.io. */}
+              {layers.map((a) => (
+                <Area
+                  key={a.id}
+                  data={a}
+                  setResize={setAreaResize}
+                  setInitDimensions={setAreaInitDimensions}
+                  onPointerDown={() => {
+                    elementPointerDown = { element: a, type: ObjectType.AREA };
+                  }}
+                />
+              ))}
+              <OverviewLinks cards={cards} />
+              {cards.map((a) => (
+                <Area
+                  key={a.id}
+                  data={a}
+                  setResize={setAreaResize}
+                  setInitDimensions={setAreaInitDimensions}
+                  onPointerDown={() => {
+                    elementPointerDown = { element: a, type: ObjectType.AREA };
+                  }}
+                />
+              ))}
+            </>
+          ) : (
+            <>
+              {/* Inside a card only the detail areas outside the scene stay. */}
+              {!scene &&
+                detailAreas.map((a) => (
+                  <Area
+                    key={a.id}
+                    data={a}
+                    setResize={setAreaResize}
+                    setInitDimensions={setAreaInitDimensions}
+                    onPointerDown={() => {
+                      elementPointerDown = {
+                        element: a,
+                        type: ObjectType.AREA,
+                      };
+                    }}
                   />
-                  <circle
-                    cx={link.label.x}
-                    cy={link.label.y}
-                    r={13}
-                    fill="grey"
+                ))}
+              {/* Relationship and Table read tables from context, so inside a
+                  card they follow the scene instead of the stored positions. */}
+              <DiagramContext.Provider value={diagramValue}>
+                {relationships.map((e) => (
+                  <Relationship key={e.id} data={e} />
+                ))}
+                {canvasTables.map((table) => (
+                  <Table
+                    key={table.id}
+                    tableData={table}
+                    setHoveredTable={setHoveredTable}
+                    handleGripField={handleGripField}
+                    setLinkingLine={setLinkingLine}
+                    onPointerDown={() => {
+                      elementPointerDown = {
+                        element: table,
+                        type: ObjectType.TABLE,
+                      };
+                    }}
                   />
-                  <text
-                    x={link.label.x}
-                    y={link.label.y}
-                    fill="white"
-                    textAnchor="middle"
-                    alignmentBaseline="middle"
-                    fontSize={13}
-                    fontWeight={600}
-                  >
-                    {link.count}
-                  </text>
-                </g>
-              ))
-            : relationships.map((e) => <Relationship key={e.id} data={e} />)}
-          {!settings.businessView &&
-            tables.map((table) => (
-              <Table
-                key={table.id}
-                tableData={table}
-                setHoveredTable={setHoveredTable}
-                handleGripField={handleGripField}
-                setLinkingLine={setLinkingLine}
-                onPointerDown={() => {
-                  elementPointerDown = {
-                    element: table,
-                    type: ObjectType.TABLE,
-                  };
-                }}
-              />
-            ))}
+                ))}
+              </DiagramContext.Provider>
+            </>
+          )}
           {linking && (
             <path
               d={`M ${linkingLine.startX} ${linkingLine.startY} L ${linkingLine.endX} ${linkingLine.endY}`}
@@ -1041,7 +999,7 @@ export default function Canvas() {
             />
           )}
           <Slot name="svg-overlay" />
-          {notes.map((n) => (
+          {visibleNotes.map((n) => (
             <Note
               key={n.id}
               data={n}
@@ -1104,6 +1062,7 @@ export default function Canvas() {
           </Tooltip>
         ))}
 
+        {!isOverview && (
         <Popover
           position="right"
           trigger="click"
@@ -1160,89 +1119,11 @@ export default function Canvas() {
             <i className="bi bi-eye" />
           </button>
         </Popover>
+        )}
 
-        <Popover
-          position="right"
-          trigger="click"
-          content={
-            <div className="popover-theme flex flex-col py-1 min-w-[220px]">
-              <div className="px-2 pb-1 text-xs opacity-70">
-                {t("business_view_hint")}
-              </div>
-              <button
-                className={`px-2 py-1.5 text-start rounded-md ${
-                  settings.businessView ? "bg-sky-600 text-white" : ""
-                }`}
-                onClick={toggleBusinessView}
-              >
-                {settings.businessView
-                  ? t("business_view_on")
-                  : t("business_view_off")}
-              </button>
-              <Divider className="!my-1" />
-              <button
-                className="px-2 py-1.5 text-start rounded-md disabled:opacity-40"
-                onClick={createCardFromSelection}
-                disabled={layout.readOnly || selectedTableIds.length === 0}
-              >
-                {selectedTableIds.length > 0
-                  ? t("create_card_from_selection", {
-                      count: selectedTableIds.length,
-                    })
-                  : t("select_tables_first")}
-              </button>
-              <button
-                className="px-2 py-1.5 text-start rounded-md"
-                onClick={generateBlocks}
-                disabled={layout.readOnly}
-              >
-                {t("generate_blocks")}
-              </button>
-              {selectedArea && (
-                <>
-                  <Divider className="!my-1" />
-                  <button
-                    className={`px-2 py-1.5 text-start rounded-md ${
-                      isCard(selectedArea) ? "bg-sky-600 text-white" : ""
-                    }`}
-                    onClick={() => setAreaKind(CARD)}
-                    disabled={layout.readOnly}
-                  >
-                    {t("make_card")}
-                  </button>
-                  <button
-                    className={`px-2 py-1.5 text-start rounded-md ${
-                      isLayer(selectedArea) ? "bg-sky-600 text-white" : ""
-                    }`}
-                    onClick={() => setAreaKind(LAYER)}
-                    disabled={layout.readOnly}
-                  >
-                    {t("make_layer")}
-                  </button>
-                </>
-              )}
-              {orphanTables.length > 0 && (
-                <>
-                  <Divider className="!my-1" />
-                  <div className="px-2 py-1 text-xs opacity-70">
-                    {t("tables_without_card", { count: orphanTables.length })}
-                  </div>
-                </>
-              )}
-            </div>
-          }
-        >
-          <button
-            aria-label={t("business_view")}
-            title={t("business_view")}
-            className={`px-3 py-2 rounded-md ${
-              settings.businessView ? "bg-sky-600 text-white" : ""
-            }`}
-          >
-            <i className="bi bi-bounding-box" />
-          </button>
-        </Popover>
+        {isOverview && <OverviewToolbar />}
       </div>
+      <ViewBar />
       {settings.showDebugCoordinates && (
         <div className="fixed flex flex-col flex-wrap gap-6 bg-[rgba(var(--semi-grey-1),var(--tw-bg-opacity))]/40 border border-color bottom-4 right-4 p-4 rounded-xl backdrop-blur-xs pointer-events-none select-none">
           <table className="table-auto grow">

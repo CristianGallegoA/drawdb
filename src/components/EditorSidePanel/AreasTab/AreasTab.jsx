@@ -1,15 +1,24 @@
 import { Button } from "@douyinfe/semi-ui";
 import { IconPlus } from "@douyinfe/semi-icons";
 import Empty from "../Empty";
-import { useAreas, useLayout } from "../../../hooks";
+import { useAreas, useLayout, useView } from "../../../hooks";
+import { isOverviewArea } from "../../../utils/blocks";
 import SearchBar from "./SearchBar";
 import AreaInfo from "./AreaDetails";
 import { useTranslation } from "react-i18next";
+import { View } from "../../../data/constants";
 
 export default function AreasTab() {
   const { areas, addArea } = useAreas();
   const { layout } = useLayout();
+  const { view } = useView();
   const { t } = useTranslation();
+
+  // Each level manages its own areas: the overview's blocks and cards, or the
+  // detail's plain areas. The stored id stays the undo handle, not the index.
+  const visible = areas.filter(
+    (area) => isOverviewArea(area) === (view === View.OVERVIEW),
+  );
 
   return (
     <div>
@@ -26,15 +35,15 @@ export default function AreasTab() {
           </Button>
         </div>
       </div>
-      {areas.length <= 0 ? (
+      {visible.length <= 0 ? (
         <Empty
           title={t("no_subject_areas")}
           text={t("no_subject_areas_text")}
         />
       ) : (
         <div className="p-2">
-          {areas.map((a, i) => (
-            <AreaInfo data={a} key={"area_" + i} i={i} />
+          {visible.map((a) => (
+            <AreaInfo data={a} key={"area_" + a.id} i={a.id} />
           ))}
         </div>
       )}

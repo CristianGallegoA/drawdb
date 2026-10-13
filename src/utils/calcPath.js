@@ -332,7 +332,7 @@ const towards = (from, to, d) => {
 
 // Rounds every vertex of a polyline with a quadratic, matching the look of the
 // automatic paths.
-function roundedPolyline(points, radius) {
+export function roundedPolyline(points, radius) {
   let d = `M ${points[0].x} ${points[0].y}`;
   for (let i = 1; i < points.length - 1; i++) {
     const p = points[i];
