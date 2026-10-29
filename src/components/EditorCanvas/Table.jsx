@@ -60,6 +60,7 @@ export default function Table({
   setHoveredTable,
   handleGripField,
   setLinkingLine,
+  linking,
 }) {
   const [hoveredField, setHoveredField] = useState(null);
   const [resizing, setResizing] = useState(false);
@@ -92,6 +93,9 @@ export default function Table({
   );
 
   const width = getTableWidth(tableData, settings.tableWidth);
+  // A summary popover opened while linking floats over the neighbouring
+  // tables and swallows the drop, so the link silently goes nowhere.
+  const showSummary = settings.showFieldSummary && !linking;
 
   const height = getTableHeight(
     tableData,
@@ -327,7 +331,7 @@ export default function Table({
               className={`overflow-hidden font-bold h-[40px] flex justify-between items-center gap-2`}
             >
               <TableSummaryPopover
-                enabled={settings.showFieldSummary}
+                enabled={showSummary}
                 tableData={tableData}
                 t={t}
               >
@@ -449,7 +453,7 @@ export default function Table({
           {visibleFieldEntries.map(({ field: e }, i) => {
             const resolved = resolveType(database, e.type);
             const reference = getFieldReference(e);
-            return settings.showFieldSummary ? (
+            return showSummary ? (
               <Popover
                 key={e.id ?? i}
                 content={
@@ -625,6 +629,7 @@ export default function Table({
     const showFieldComment = fieldData.comment && settings.showComments;
     return (
       <div
+        key={fieldData.id ?? index}
         className={`${
           index === visibleFields.length - 1 ? "" : "border-b border-gray-400"
         } group w-full overflow-hidden`}

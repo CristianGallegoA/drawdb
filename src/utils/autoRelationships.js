@@ -2,6 +2,34 @@ import { nanoid } from "nanoid";
 import { Cardinality, Constraint } from "../data/constants";
 import { getRelationshipFields } from "./utils";
 
+function cardinalityBetween(startField, endField) {
+  const startIsUnique = startField.unique || startField.primary;
+  const endIsUnique = endField.unique || endField.primary;
+
+  if (startIsUnique && !endIsUnique) return Cardinality.ONE_TO_MANY;
+  if (!startIsUnique && endIsUnique) return Cardinality.MANY_TO_ONE;
+  return Cardinality.ONE_TO_ONE;
+}
+
+/**
+ * A new single-column relationship from startField to endField, the same one
+ * whether it is drawn on the canvas or picked in the side panel.
+ */
+export function buildRelationship(startTable, startField, endTable, endField) {
+  return {
+    id: nanoid(),
+    name: `fk_${startTable.name}_${startField.name}_${endTable.name}`,
+    startTableId: startTable.id,
+    startFieldId: startField.id,
+    endTableId: endTable.id,
+    endFieldId: endField.id,
+    fields: [{ startFieldId: startField.id, endFieldId: endField.id }],
+    cardinality: cardinalityBetween(startField, endField),
+    updateConstraint: Constraint.NONE,
+    deleteConstraint: Constraint.NONE,
+  };
+}
+
 function singularize(name) {
   if (!name || typeof name !== "string") return "";
   const lower = name.trim().toLowerCase();

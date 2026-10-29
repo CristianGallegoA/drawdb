@@ -192,6 +192,8 @@ const en = {
     unique_constraints: "Unique constraints",
     add_unique_constraint: "Add unique constraint",
     select_fields: "Select fields",
+    select_table: "Select table",
+    select_field: "Select field",
     title: "Title",
     not_set: "Not set",
     foreign: "Foreign",

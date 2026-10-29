@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Slot } from "../../context/ExtensionsContext";
 import {
   Action,
-  Cardinality,
-  Constraint,
   darkBgTheme,
   ObjectType,
   gridSize,
@@ -54,7 +52,7 @@ import {
 import { DiagramContext } from "../../context/DiagramContext";
 import { getRectFromEndpoints, isInsideRect } from "../../utils/rect";
 import { State, noteWidth } from "../../data/constants";
-import { nanoid } from "nanoid";
+import { buildRelationship } from "../../utils/autoRelationships";
 
 export default function Canvas() {
   const { t } = useTranslation();
@@ -720,39 +718,16 @@ export default function Canvas() {
     setLinking(true);
   };
 
-  const getCardinality = (startField, endField) => {
-    const startIsUnique = startField.unique || startField.primary;
-    const endIsUnique = endField.unique || endField.primary;
-
-    if (startIsUnique && endIsUnique) {
-      return Cardinality.ONE_TO_ONE;
-    }
-
-    if (startIsUnique && !endIsUnique) {
-      return Cardinality.ONE_TO_MANY;
-    }
-
-    if (!startIsUnique && endIsUnique) {
-      return Cardinality.MANY_TO_ONE;
-    }
-
-    return Cardinality.ONE_TO_ONE;
-  };
-
   const handleLinking = () => {
     if (hoveredTable.tableId === null) return;
     if (hoveredTable.fieldId === null) return;
 
-    const { fields: startTableFields, name: startTableName } = tables.find(
-      (t) => t.id === linkingLine.startTableId,
-    );
-    const startField = startTableFields.find(
+    const startTable = tables.find((t) => t.id === linkingLine.startTableId);
+    const startField = startTable.fields.find(
       (f) => f.id === linkingLine.startFieldId,
     );
-    const { fields: endTableFields, name: endTableName } = tables.find(
-      (t) => t.id === hoveredTable.tableId,
-    );
-    const endField = endTableFields.find((f) => f.id === hoveredTable.fieldId);
+    const endTable = tables.find((t) => t.id === hoveredTable.tableId);
+    const endField = endTable.fields.find((f) => f.id === hoveredTable.fieldId);
 
     if (!areFieldsCompatible(database, startField.type, endField.type)) {
       Toast.info(t("cannot_connect"));
@@ -764,29 +739,9 @@ export default function Canvas() {
     )
       return;
 
-    const cardinality = getCardinality(startField, endField);
-
-    const newRelationship = {
-      ...linkingLine,
-      cardinality,
-      endTableId: hoveredTable.tableId,
-      endFieldId: hoveredTable.fieldId,
-      fields: [
-        {
-          startFieldId: linkingLine.startFieldId,
-          endFieldId: hoveredTable.fieldId,
-        },
-      ],
-      updateConstraint: Constraint.NONE,
-      deleteConstraint: Constraint.NONE,
-      name: `fk_${startTableName}_${startField.name}_${endTableName}`,
-      id: nanoid(),
-    };
-    delete newRelationship.startX;
-    delete newRelationship.startY;
-    delete newRelationship.endX;
-    delete newRelationship.endY;
-    addRelationship(newRelationship);
+    addRelationship(
+      buildRelationship(startTable, startField, endTable, endField),
+    );
   };
 
   useEventListener("keydown", (e) => {
@@ -979,6 +934,7 @@ export default function Canvas() {
                     setHoveredTable={setHoveredTable}
                     handleGripField={handleGripField}
                     setLinkingLine={setLinkingLine}
+                    linking={linking}
                     onPointerDown={() => {
                       elementPointerDown = {
                         element: table,

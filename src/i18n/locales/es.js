@@ -188,6 +188,8 @@ const es = {
     indices: "Índices",
     add_index: "Agregar índice",
     select_fields: "Seleccionar campos",
+    select_table: "Seleccionar tabla",
+    select_field: "Seleccionar campo",
     title: "Título",
     not_set: "No establecido",
     foreign: "Foránea",

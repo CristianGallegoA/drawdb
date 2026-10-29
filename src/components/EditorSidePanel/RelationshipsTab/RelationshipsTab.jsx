@@ -2,6 +2,7 @@ import { Collapse } from "@douyinfe/semi-ui";
 import { useSelect, useDiagram, useSaveState, useLayout } from "../../../hooks";
 import Empty from "../Empty";
 import SearchBar from "./SearchBar";
+import AddRelationship from "./AddRelationship";
 import RelationshipInfo from "./RelationshipInfo";
 import { ObjectType, State } from "../../../data/constants";
 import { useTranslation } from "react-i18next";
@@ -17,7 +18,12 @@ export default function RelationshipsTab() {
 
   return (
     <>
-      <SearchBar />
+      <div className="flex gap-2">
+        <SearchBar />
+        <div>
+          <AddRelationship />
+        </div>
+      </div>
       {relationships.length <= 0 ? (
         <Empty
           title={t("no_relationships")}
