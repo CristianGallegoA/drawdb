@@ -13,6 +13,7 @@ import {
 } from "../../../utils/blocks";
 import { Action, ObjectType } from "../../../data/constants";
 import { useTranslation } from "react-i18next";
+import { useOverviewLinkActions } from "../../EditorCanvas/OverviewLinks";
 
 export default function AreaInfo({ data, i }) {
   const { t } = useTranslation();
@@ -213,6 +214,7 @@ function CardLinks({ card }) {
   const { layout } = useLayout();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const editRef = useRef(null);
+  const linkActions = useOverviewLinkActions();
 
   const others = areas.filter((area) => isCard(area) && area.key !== card.key);
   const links = card.links ?? [];
@@ -227,21 +229,8 @@ function CardLinks({ card }) {
       message,
     );
 
-  // A link belongs to its source card, so reversing moves it to the other one.
-  const reverse = (i) =>
-    commitAreas(
-      areas.map((area) => {
-        if (area.id === card.id)
-          return { ...area, links: links.filter((_, j) => j !== i) };
-        if (area.key === links[i].to)
-          return {
-            ...area,
-            links: [...(area.links ?? []), { ...links[i], to: card.key }],
-          };
-        return area;
-      }),
-      message,
-    );
+  // Shared with the canvas, so a two-way pair swaps its texts in both places.
+  const reverse = (i) => linkActions.reverse(card.key, i);
 
   return (
     <div className="mt-3">

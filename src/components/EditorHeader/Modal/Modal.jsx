@@ -3,6 +3,8 @@ import {
   Image,
   Input,
   Modal as SemiUIModal,
+  Radio,
+  RadioGroup,
   Spin,
   Toast,
 } from "@douyinfe/semi-ui";
@@ -12,6 +14,11 @@ import { Parser as OracleParser } from "oracle-sql-parser";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DB, MODAL, STATUS } from "../../../data/constants";
+import {
+  DEFAULT_EXPORT_SCALE,
+  EXPORT_SCALES,
+} from "../../../utils/exportImage";
+import { dataURItoBlob } from "../../../utils/utils";
 import { databases } from "../../../data/databases";
 import {
   useAreas,
@@ -62,6 +69,7 @@ export default function Modal({
   setTitle,
   exportData,
   setExportData,
+  renderImage,
   importDb,
   importFrom,
   saveAsCopy,
@@ -200,7 +208,10 @@ export default function Modal({
 
       if (!result) return;
 
-      const { diagram, warnings } = normalizeAiDiagram(result.diagram, database);
+      const { diagram, warnings } = normalizeAiDiagram(
+        result.diagram,
+        database,
+      );
       const allWarnings = [...(result.warnings ?? []), ...warnings];
 
       applyImportedDiagram(diagram);
@@ -224,8 +235,10 @@ export default function Modal({
   const getModalOnOk = async () => {
     switch (modal) {
       case MODAL.IMG:
+        // A high resolution export is tens of MB: a blob downloads where a
+        // data: URL that size would be refused by the browser.
         saveAs(
-          exportData.data,
+          dataURItoBlob(exportData.data),
           `${exportData.filename}.${exportData.extension}`,
         );
         return;
@@ -328,7 +341,49 @@ export default function Modal({
         );
       case MODAL.CODE:
       case MODAL.IMG:
-        if (exportData.data !== "" || exportData.data) {
+        if (modal === MODAL.IMG && exportData.extension !== "svg") {
+          return (
+            <>
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="text-sm font-semibold">
+                  {t("export_resolution")}:
+                </span>
+                <RadioGroup
+                  type="button"
+                  buttonSize="small"
+                  value={exportData.scale ?? DEFAULT_EXPORT_SCALE}
+                  onChange={(e) =>
+                    renderImage?.(exportData.extension, e.target.value)
+                  }
+                >
+                  {EXPORT_SCALES.map((scale) => (
+                    <Radio key={scale} value={scale}>
+                      {`${scale}x`}
+                    </Radio>
+                  ))}
+                </RadioGroup>
+                {exportData.data && exportData.width && (
+                  <span className="text-xs opacity-70">
+                    {`${exportData.width} × ${exportData.height} px`}
+                  </span>
+                )}
+              </div>
+              <ImageExportBody
+                exportData={exportData}
+                setExportData={setExportData}
+              />
+            </>
+          );
+        }
+        if (modal === MODAL.IMG) {
+          return (
+            <ImageExportBody
+              exportData={exportData}
+              setExportData={setExportData}
+            />
+          );
+        }
+        if (exportData.data) {
           return (
             <>
               {modal === MODAL.IMG ? (
@@ -465,5 +520,33 @@ export default function Modal({
     >
       {getModalBody()}
     </SemiUIModal>
+  );
+}
+
+function ImageExportBody({ exportData, setExportData }) {
+  const { t } = useTranslation();
+  if (!exportData.data) {
+    return (
+      <div className="text-center my-3 text-sky-600">
+        <Spin tip={t("loading")} size="large" />
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="flex justify-center">
+        <Image src={exportData.data} alt="Diagram" height={280} />
+      </div>
+      <div className="text-sm font-semibold mt-2">{t("filename")}:</div>
+      <Input
+        value={exportData.filename}
+        placeholder={t("filename")}
+        suffix={<div className="p-2">{`.${exportData.extension}`}</div>}
+        onChange={(value) =>
+          setExportData((prev) => ({ ...prev, filename: value }))
+        }
+        field="filename"
+      />
+    </>
   );
 }

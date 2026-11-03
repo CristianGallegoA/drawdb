@@ -16,7 +16,11 @@ import Relationship from "./Relationship";
 import Note from "./Note";
 import ViewBar from "./ViewBar";
 import OverviewToolbar from "./OverviewToolbar";
-import OverviewLinks from "./OverviewLinks";
+import OverviewLinks, {
+  OverviewLinkEditor,
+  useOverviewLinkActions,
+  useOverviewLinks,
+} from "./OverviewLinks";
 import {
   useCanvas,
   useSettings,
@@ -43,6 +47,7 @@ import {
   UNCATEGORIZED,
 } from "../../utils/utils";
 import {
+  cardAt,
   focusScene,
   isCard,
   isLayer,
@@ -86,6 +91,18 @@ export default function Canvas() {
   );
   const cards = useMemo(() => overviewAreas.filter(isCard), [overviewAreas]);
   const layers = useMemo(() => overviewAreas.filter(isLayer), [overviewAreas]);
+  const overviewLinks = useOverviewLinks(cards);
+  const linkActions = useOverviewLinkActions();
+  // The arrow being edited, by its source card key and position in its links;
+  // `edit` puts the cursor straight into its text.
+  const [selectedLink, setSelectedLink] = useState(null);
+  // An arrow being drawn from a card handle toward the pointer.
+  const [linkDraft, setLinkDraft] = useState(null);
+  const selectedLinkItem = selectedLink
+    ? overviewLinks.find(
+        (l) => l.key === selectedLink.key && l.index === selectedLink.index,
+      )
+    : null;
 
   // Drilling into a card redraws only its tables, arranged on their own. The
   // scene is computed, never written back, so it disturbs no stored layout.
@@ -114,6 +131,58 @@ export default function Canvas() {
     bulkSelectedElements,
     setBulkSelectedElements,
   } = useSelect();
+  const selectLink = (sel) => {
+    setSelectedLink(sel);
+    if (!sel) return;
+    // One thing selected at a time, so Delete never hits a card instead.
+    setSelectedElement((prev) => ({
+      ...prev,
+      element: ObjectType.NONE,
+      id: -1,
+      open: false,
+    }));
+    setBulkSelectedElements([]);
+  };
+
+  const startLink = (card, point) => {
+    if (!card.key || layout.readOnly) return;
+    setSelectedLink(null);
+    setLinkDraft({ fromKey: card.key, start: point, color: card.color });
+  };
+
+  const finishLink = () => {
+    const target = cardAt(cards, tables, pointer.spaces.diagram);
+    const from = linkDraft.fromKey;
+    setLinkDraft(null);
+    if (!target?.key || target.key === from) return;
+    const created = linkActions.add(from, target.key);
+    if (created) selectLink({ ...created, edit: true });
+  };
+
+  const linkDraftTarget = linkDraft
+    ? cardAt(cards, tables, pointer.spaces.diagram)
+    : null;
+
+  useEffect(() => {
+    if (!isOverview) {
+      setSelectedLink(null);
+      setLinkDraft(null);
+    }
+  }, [isOverview]);
+
+  // Released outside the canvas: the draft is dropped, never left dangling.
+  useEventListener("pointerup", () => setLinkDraft(null));
+
+  useEventListener("keydown", (e) => {
+    if (!selectedLink || isTypingTarget(e.target)) return;
+    if (e.key === "Escape") setSelectedLink(null);
+    if ((e.key === "Delete" || e.key === "Backspace") && !layout.readOnly) {
+      e.preventDefault();
+      linkActions.remove(selectedLink.key, selectedLink.index);
+      setSelectedLink(null);
+    }
+  });
+
   const notDragging = {
     id: -1,
     type: ObjectType.NONE,
@@ -417,6 +486,9 @@ export default function Canvas() {
 
     if (layout.readOnly) return;
 
+    // The draft arrow follows the pointer straight from the canvas context.
+    if (linkDraft) return;
+
     if (linking) {
       setLinkingLine({
         ...linkingLine,
@@ -549,6 +621,8 @@ export default function Canvas() {
     }
 
     if (isMouseLeftButton) {
+      // Arrows stop this event themselves, so reaching here means elsewhere.
+      setSelectedLink(null);
       setBulkSelectRect({
         x1: pointer.spaces.diagram.x,
         y1: pointer.spaces.diagram.y,
@@ -632,6 +706,11 @@ export default function Canvas() {
     if (selectedElement.open && !layout.sidebar) return;
 
     if (!e.isPrimary) return;
+
+    if (linkDraft) {
+      finishLink();
+      return;
+    }
 
     if (didDrag()) {
       setUndoStack((prev) => [
@@ -872,42 +951,17 @@ export default function Canvas() {
                 width={viewBox.width}
                 height={viewBox.height}
                 fill="url(#pattern-grid)"
+                data-export-ignore
               />
             </>
           )}
-          {isOverview ? (
-            <>
-              {/* Blocks frame cards, so they are painted first; the arrows run
+          {/* What image export frames and renders: the drawing, no chrome. */}
+          <g id="diagram-content">
+            {isOverview ? (
+              <>
+                {/* Blocks frame cards, so they are painted first; the arrows run
                   over the block background but under the cards, like draw.io. */}
-              {layers.map((a) => (
-                <Area
-                  key={a.id}
-                  data={a}
-                  setResize={setAreaResize}
-                  setInitDimensions={setAreaInitDimensions}
-                  onPointerDown={() => {
-                    elementPointerDown = { element: a, type: ObjectType.AREA };
-                  }}
-                />
-              ))}
-              <OverviewLinks cards={cards} />
-              {cards.map((a) => (
-                <Area
-                  key={a.id}
-                  data={a}
-                  setResize={setAreaResize}
-                  setInitDimensions={setAreaInitDimensions}
-                  onPointerDown={() => {
-                    elementPointerDown = { element: a, type: ObjectType.AREA };
-                  }}
-                />
-              ))}
-            </>
-          ) : (
-            <>
-              {/* Inside a card only the detail areas outside the scene stay. */}
-              {!scene &&
-                detailAreas.map((a) => (
+                {layers.map((a) => (
                   <Area
                     key={a.id}
                     data={a}
@@ -921,54 +975,125 @@ export default function Canvas() {
                     }}
                   />
                 ))}
-              {/* Relationship and Table read tables from context, so inside a
-                  card they follow the scene instead of the stored positions. */}
-              <DiagramContext.Provider value={diagramValue}>
-                {relationships.map((e) => (
-                  <Relationship key={e.id} data={e} />
-                ))}
-                {canvasTables.map((table) => (
-                  <Table
-                    key={table.id}
-                    tableData={table}
-                    setHoveredTable={setHoveredTable}
-                    handleGripField={handleGripField}
-                    setLinkingLine={setLinkingLine}
-                    linking={linking}
+                <OverviewLinks
+                  links={overviewLinks}
+                  selected={selectedLink}
+                  onSelect={selectLink}
+                  readOnly={layout.readOnly}
+                />
+                {cards.map((a) => (
+                  <Area
+                    key={a.id}
+                    data={a}
+                    setResize={setAreaResize}
+                    setInitDimensions={setAreaInitDimensions}
+                    onStartLink={startLink}
+                    linkTarget={
+                      !!linkDraftTarget &&
+                      linkDraftTarget.id === a.id &&
+                      a.key !== linkDraft?.fromKey
+                    }
                     onPointerDown={() => {
                       elementPointerDown = {
-                        element: table,
-                        type: ObjectType.TABLE,
+                        element: a,
+                        type: ObjectType.AREA,
                       };
                     }}
                   />
                 ))}
-              </DiagramContext.Provider>
-            </>
-          )}
-          {linking && (
-            <path
-              d={`M ${linkingLine.startX} ${linkingLine.startY} L ${linkingLine.endX} ${linkingLine.endY}`}
-              stroke="red"
-              strokeDasharray="8,8"
-              className="pointer-events-none touch-none"
-            />
-          )}
+                <OverviewLinks
+                  layer="labels"
+                  links={overviewLinks}
+                  selected={selectedLink}
+                  onSelect={selectLink}
+                  readOnly={layout.readOnly}
+                />
+                {linkDraft && (
+                  <g className="pointer-events-none" data-export-ignore>
+                    <path
+                      d={`M ${linkDraft.start.x} ${linkDraft.start.y} L ${pointer.spaces.diagram.x} ${pointer.spaces.diagram.y}`}
+                      stroke={linkDraft.color}
+                      strokeWidth={2.5}
+                      strokeDasharray="8 6"
+                    />
+                    <circle
+                      cx={pointer.spaces.diagram.x}
+                      cy={pointer.spaces.diagram.y}
+                      r={5}
+                      fill={linkDraft.color}
+                    />
+                  </g>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Inside a card only the detail areas outside the scene stay. */}
+                {!scene &&
+                  detailAreas.map((a) => (
+                    <Area
+                      key={a.id}
+                      data={a}
+                      setResize={setAreaResize}
+                      setInitDimensions={setAreaInitDimensions}
+                      onPointerDown={() => {
+                        elementPointerDown = {
+                          element: a,
+                          type: ObjectType.AREA,
+                        };
+                      }}
+                    />
+                  ))}
+                {/* Relationship and Table read tables from context, so inside a
+                  card they follow the scene instead of the stored positions. */}
+                <DiagramContext.Provider value={diagramValue}>
+                  {relationships.map((e) => (
+                    <Relationship key={e.id} data={e} />
+                  ))}
+                  {canvasTables.map((table) => (
+                    <Table
+                      key={table.id}
+                      tableData={table}
+                      setHoveredTable={setHoveredTable}
+                      handleGripField={handleGripField}
+                      setLinkingLine={setLinkingLine}
+                      linking={linking}
+                      onPointerDown={() => {
+                        elementPointerDown = {
+                          element: table,
+                          type: ObjectType.TABLE,
+                        };
+                      }}
+                    />
+                  ))}
+                </DiagramContext.Provider>
+              </>
+            )}
+            {linking && (
+              <path
+                data-export-ignore
+                d={`M ${linkingLine.startX} ${linkingLine.startY} L ${linkingLine.endX} ${linkingLine.endY}`}
+                stroke="red"
+                strokeDasharray="8,8"
+                className="pointer-events-none touch-none"
+              />
+            )}
+            {visibleNotes.map((n) => (
+              <Note
+                key={n.id}
+                data={n}
+                onPointerDown={() => {
+                  elementPointerDown = {
+                    element: n,
+                    type: ObjectType.NOTE,
+                  };
+                }}
+              />
+            ))}
+          </g>
           <Slot name="svg-overlay" />
-          {visibleNotes.map((n) => (
-            <Note
-              key={n.id}
-              data={n}
-              onPointerDown={() => {
-                elementPointerDown = {
-                  element: n,
-                  type: ObjectType.NOTE,
-                };
-              }}
-            />
-          ))}
           {bulkSelectRect.show && (
             <rect
+              data-export-ignore
               {...getRectFromEndpoints(bulkSelectRect)}
               stroke="grey"
               fill="grey"
@@ -978,6 +1103,14 @@ export default function Canvas() {
           )}
         </svg>
       </div>
+      {isOverview && selectedLinkItem && !layout.readOnly && (
+        <OverviewLinkEditor
+          item={selectedLinkItem}
+          autoFocus={!!selectedLink?.edit}
+          toScreen={canvasContextValue.coords.toScreenSpace}
+          onChangeSelection={setSelectedLink}
+        />
+      )}
       <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-1 rounded-lg p-1 popover-theme">
         {[
           {
@@ -1019,62 +1152,62 @@ export default function Canvas() {
         ))}
 
         {!isOverview && (
-        <Popover
-          position="right"
-          trigger="click"
-          content={
-            <div className="popover-theme flex flex-col py-1 min-w-[200px]">
-              <div className="px-2 pb-1 text-xs opacity-70">
-                {t("categories")}
-              </div>
-              {categories.map(({ category, count }) => {
-                const off = hiddenCategories.includes(category);
-                return (
-                  <button
-                    key={category || UNCATEGORIZED}
-                    className="px-2 py-1.5 rounded-md flex items-center gap-2"
-                    onClick={() => toggleCategory(category)}
-                  >
-                    <i
-                      className={`bi ${off ? "bi-eye-slash" : "bi-eye"} ${
-                        off ? "opacity-50" : ""
-                      }`}
-                    />
-                    <span
-                      className={`grow text-start ${off ? "opacity-50 line-through" : ""}`}
+          <Popover
+            position="right"
+            trigger="click"
+            content={
+              <div className="popover-theme flex flex-col py-1 min-w-[200px]">
+                <div className="px-2 pb-1 text-xs opacity-70">
+                  {t("categories")}
+                </div>
+                {categories.map(({ category, count }) => {
+                  const off = hiddenCategories.includes(category);
+                  return (
+                    <button
+                      key={category || UNCATEGORIZED}
+                      className="px-2 py-1.5 rounded-md flex items-center gap-2"
+                      onClick={() => toggleCategory(category)}
                     >
-                      {category === UNCATEGORIZED
-                        ? t("no_category")
-                        : category.toUpperCase()}
-                    </span>
-                    <span className="text-xs opacity-60">{count}</span>
-                  </button>
-                );
-              })}
-              {hiddenCategories.length > 0 && (
-                <>
-                  <Divider className="!my-1" />
-                  <button
-                    className="px-2 py-1.5 text-start rounded-md"
-                    onClick={showAllCategories}
-                  >
-                    {t("show_all_categories")}
-                  </button>
-                </>
-              )}
-            </div>
-          }
-        >
-          <button
-            aria-label={t("categories")}
-            title={t("categories")}
-            className={`px-3 py-2 rounded-md ${
-              hiddenCategories.length > 0 ? "bg-sky-600 text-white" : ""
-            }`}
+                      <i
+                        className={`bi ${off ? "bi-eye-slash" : "bi-eye"} ${
+                          off ? "opacity-50" : ""
+                        }`}
+                      />
+                      <span
+                        className={`grow text-start ${off ? "opacity-50 line-through" : ""}`}
+                      >
+                        {category === UNCATEGORIZED
+                          ? t("no_category")
+                          : category.toUpperCase()}
+                      </span>
+                      <span className="text-xs opacity-60">{count}</span>
+                    </button>
+                  );
+                })}
+                {hiddenCategories.length > 0 && (
+                  <>
+                    <Divider className="!my-1" />
+                    <button
+                      className="px-2 py-1.5 text-start rounded-md"
+                      onClick={showAllCategories}
+                    >
+                      {t("show_all_categories")}
+                    </button>
+                  </>
+                )}
+              </div>
+            }
           >
-            <i className="bi bi-eye" />
-          </button>
-        </Popover>
+            <button
+              aria-label={t("categories")}
+              title={t("categories")}
+              className={`px-3 py-2 rounded-md ${
+                hiddenCategories.length > 0 ? "bg-sky-600 text-white" : ""
+              }`}
+            >
+              <i className="bi bi-eye" />
+            </button>
+          </Popover>
         )}
 
         {isOverview && <OverviewToolbar />}

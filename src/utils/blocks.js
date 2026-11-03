@@ -424,6 +424,109 @@ export function linkRoute(from, to) {
   };
 }
 
+// Distance between the two lanes of a pair of cards linked both ways.
+const TWO_WAY_GAP = 11;
+
+const samePoint = (a, b) =>
+  Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+
+// Drops repeated and collinear vertices, so every segment has a direction.
+function simplify(points) {
+  const out = [];
+  for (const p of points) {
+    if (out.length && samePoint(out[out.length - 1], p)) continue;
+    if (out.length >= 2) {
+      const a = out[out.length - 2];
+      const b = out[out.length - 1];
+      const cross = (b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x);
+      if (Math.abs(cross) < 0.5) out.pop();
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Shifts an orthogonal polyline sideways, always to the same hand of travel.
+ * Two arrows running opposite ways between the same cards therefore end up in
+ * separate lanes, like a two-way road, instead of drawn on top of each other.
+ */
+function offsetOrthogonal(points, distance) {
+  const pts = simplify(points);
+  if (pts.length < 2) return pts;
+  const normals = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const dx = pts[i + 1].x - pts[i].x;
+    const dy = pts[i + 1].y - pts[i].y;
+    const length = Math.hypot(dx, dy) || 1;
+    normals.push({ x: -dy / length, y: dx / length });
+  }
+  return pts.map((p, i) => {
+    const before = normals[i - 1] ?? { x: 0, y: 0 };
+    const after = normals[i] ?? { x: 0, y: 0 };
+    // At an elbow both neighbours push, each along its own normal.
+    const n =
+      i === 0
+        ? after
+        : i === pts.length - 1
+          ? before
+          : {
+              x: before.x + after.x,
+              y: before.y + after.y,
+            };
+    return { x: p.x + n.x * distance, y: p.y + n.y * distance };
+  });
+}
+
+/** The point found `fraction` of the way along a polyline. */
+export function pointAlong(points, fraction) {
+  const lengths = [];
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const length = Math.hypot(
+      points[i + 1].x - points[i].x,
+      points[i + 1].y - points[i].y,
+    );
+    lengths.push(length);
+    total += length;
+  }
+  let left = total * fraction;
+  for (let i = 0; i < lengths.length; i++) {
+    if (left <= lengths[i] || i === lengths.length - 1) {
+      const t = lengths[i] ? Math.min(left / lengths[i], 1) : 0;
+      return {
+        x: points[i].x + (points[i + 1].x - points[i].x) * t,
+        y: points[i].y + (points[i + 1].y - points[i].y) * t,
+      };
+    }
+    left -= lengths[i];
+  }
+  return points[0];
+}
+
+/**
+ * Where an overview arrow is drawn. A one-way link runs down the middle with
+ * its text on the bend; when the other card points back, each arrow takes its
+ * own lane and its text moves toward its source, so the two never overlap and
+ * each sentence reads "source → does this → target".
+ */
+export function linkGeometry(from, to, { twoWay = false } = {}) {
+  const { points, label } = linkRoute(from, to);
+  if (!twoWay) return { points, label };
+  const lane = offsetOrthogonal(points, TWO_WAY_GAP);
+  return { points: lane, label: pointAlong(lane, 0.3) };
+}
+
+/** Card whose drawn box holds a diagram point, topmost first. */
+export function cardAt(cards, tables, point) {
+  for (let i = cards.length - 1; i >= 0; i--) {
+    const card = cards[i];
+    const rect = { ...card, height: renderedHeight(card, tables) };
+    if (containsPoint(rect, point)) return card;
+  }
+  return null;
+}
+
 /**
  * Candidate arrows, read from the foreign keys that cross two cards, pointed
  * parent → child (primary key side first). Pairs already linked either way are

@@ -142,6 +142,8 @@ const en = {
     add_link: "Add link",
     link_label_placeholder: "Link label",
     toggle_dashed: "Dashed line",
+    export_resolution: "Resolution",
+    drag_to_connect: "Drag to another card to connect them",
     reverse_link: "Reverse direction",
     add_area: "Add area",
     add_note: "Add note",

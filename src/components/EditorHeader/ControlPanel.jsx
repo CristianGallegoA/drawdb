@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Slot, useExtensions } from "../../context/ExtensionsContext";
 import { createPortal } from "react-dom";
@@ -27,7 +27,10 @@ import {
   Typography,
   Modal as SemiModal,
 } from "@douyinfe/semi-ui";
-import { toPng, toJpeg, toSvg } from "html-to-image";
+import {
+  DEFAULT_EXPORT_SCALE,
+  exportDiagramImage,
+} from "../../utils/exportImage";
 import {
   jsonToMySQL,
   jsonToPostgreSQL,
@@ -46,7 +49,7 @@ import {
   DB,
   IMPORT_FROM,
   noteWidth,
-  pngExportPixelRatio,
+  darkBgTheme,
 } from "../../data/constants";
 import jsPDF from "jspdf";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -155,7 +158,8 @@ export default function ControlPanel({
   const { notes, setNotes, updateNote, addNote, deleteNote } = useNotes();
   const { areas, setAreas, updateArea, addArea, deleteArea } = useAreas();
   const { undoStack, redoStack, setUndoStack, setRedoStack } = useUndoRedo();
-  const { selectedElement, setSelectedElement } = useSelect();
+  const { selectedElement, setSelectedElement, setBulkSelectedElements } =
+    useSelect();
   const { transform, setTransform } = useTransform();
   const { view } = useView();
   const { t, i18n } = useTranslation();
@@ -624,26 +628,70 @@ export default function ControlPanel({
       showFieldSummary: !prev.showFieldSummary,
     }));
   };
-  const copyAsImage = () => {
-    toPng(document.getElementById("canvas"), {
-      pixelRatio: pngExportPixelRatio,
-    }).then(function (dataUrl) {
-      const blob = dataURItoBlob(dataUrl);
-      navigator.clipboard
-        .write([new ClipboardItem({ "image/png": blob })])
-        .then(() => {
-          Toast.success(t("copied_to_clipboard"));
-        })
-        .catch(() => {
-          Toast.error(t("oops_smth_went_wrong"));
-        });
-    });
+  // Clears hover and selection chrome so the export shows the diagram only,
+  // then waits for React to paint that before the DOM is copied.
+  const clearSelectionForExport = async () => {
+    setSelectedElement((prev) => ({
+      ...prev,
+      element: ObjectType.NONE,
+      id: -1,
+      open: false,
+    }));
+    setBulkSelectedElements([]);
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
+  };
+  const exportBackground = settings.mode === "dark" ? darkBgTheme : "white";
+  const renderRequest = useRef(0);
+  const renderImage = async (format, scale = DEFAULT_EXPORT_SCALE) => {
+    const request = ++renderRequest.current;
+    setExportData((prev) => ({ ...prev, data: "", extension: format, scale }));
+    try {
+      await clearSelectionForExport();
+      const result = await exportDiagramImage(format, {
+        scale,
+        background: exportBackground,
+      });
+      // A newer resolution was picked while this one was rendering.
+      if (request !== renderRequest.current) return;
+      setExportData((prev) => ({
+        ...prev,
+        data: result.dataUrl,
+        extension: format,
+        scale,
+        width: result.width,
+        height: result.height,
+      }));
+    } catch {
+      if (request !== renderRequest.current) return;
+      Toast.error(t("oops_smth_went_wrong"));
+      setModal(MODAL.NONE);
+    }
+  };
+  const exportImage = (format) => {
+    openExportModal(MODAL.IMG);
+    renderImage(format);
+  };
+  const copyAsImage = async () => {
+    try {
+      await clearSelectionForExport();
+      const { dataUrl } = await exportDiagramImage("png", {
+        scale: 2,
+        background: exportBackground,
+      });
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": dataURItoBlob(dataUrl) }),
+      ]);
+      Toast.success(t("copied_to_clipboard"));
+    } catch {
+      Toast.error(t("oops_smth_went_wrong"));
+    }
   };
   const resetView = () =>
     setTransform((prev) => ({ ...prev, zoom: 1, pan: { x: 0, y: 0 } }));
   // The overview has no tables of its own, so framing it is just its blocks.
-  const fitWindow = () =>
-    fitToView(view === View.OVERVIEW ? [] : tables);
+  const fitWindow = () => fitToView(view === View.OVERVIEW ? [] : tables);
   const fitToView = (tablesToFit) => {
     const canvas = document.getElementById("canvas").getBoundingClientRect();
     const isOverview = view === View.OVERVIEW;
@@ -681,14 +729,14 @@ export default function ControlPanel({
     notes
       .filter((note) => (note.view ?? View.DETAIL) === view)
       .forEach((note) => {
-      minMaxXY.minX = Math.min(minMaxXY.minX, note.x);
-      minMaxXY.minY = Math.min(minMaxXY.minY, note.y);
-      minMaxXY.maxX = Math.max(
-        minMaxXY.maxX,
-        note.x + (note.width ?? noteWidth),
-      );
-      minMaxXY.maxY = Math.max(minMaxXY.maxY, note.y + note.height);
-    });
+        minMaxXY.minX = Math.min(minMaxXY.minX, note.x);
+        minMaxXY.minY = Math.min(minMaxXY.minY, note.y);
+        minMaxXY.maxX = Math.max(
+          minMaxXY.maxX,
+          note.x + (note.width ?? noteWidth),
+        );
+        minMaxXY.maxY = Math.max(minMaxXY.maxY, note.y + note.height);
+      });
 
     const padding = 10;
     const width = minMaxXY.maxX - minMaxXY.minX + padding;
@@ -1396,49 +1444,15 @@ export default function ControlPanel({
         children: [
           {
             name: "PNG",
-            function: () => {
-              toPng(document.getElementById("canvas"), {
-                pixelRatio: pngExportPixelRatio,
-              }).then(function (dataUrl) {
-                setExportData((prev) => ({
-                  ...prev,
-                  data: dataUrl,
-                  extension: "png",
-                }));
-              });
-              openExportModal(MODAL.IMG);
-            },
+            function: () => exportImage("png"),
           },
           {
             name: "JPEG",
-            function: () => {
-              toJpeg(document.getElementById("canvas"), { quality: 0.95 }).then(
-                function (dataUrl) {
-                  setExportData((prev) => ({
-                    ...prev,
-                    data: dataUrl,
-                    extension: "jpeg",
-                  }));
-                },
-              );
-              openExportModal(MODAL.IMG);
-            },
+            function: () => exportImage("jpeg"),
           },
           {
             name: "SVG",
-            function: () => {
-              const filter = (node) => node.tagName !== "i";
-              toSvg(document.getElementById("canvas"), { filter: filter }).then(
-                function (dataUrl) {
-                  setExportData((prev) => ({
-                    ...prev,
-                    data: dataUrl,
-                    extension: "svg",
-                  }));
-                },
-              );
-              openExportModal(MODAL.IMG);
-            },
+            function: () => exportImage("svg"),
           },
           {
             name: "JSON",
@@ -1484,24 +1498,35 @@ export default function ControlPanel({
           },
           {
             name: "PDF",
-            function: () => {
-              const canvas = document.getElementById("canvas");
+            function: async () => {
               const filename = `${title}_${new Date().toISOString()}`;
-              toJpeg(canvas).then(function (dataUrl) {
-                const doc = new jsPDF("l", "px", [
-                  canvas.offsetWidth,
-                  canvas.offsetHeight,
-                ]);
+              try {
+                await clearSelectionForExport();
+                const { dataUrl, bounds } = await exportDiagramImage("jpeg", {
+                  scale: 3,
+                  background: exportBackground,
+                });
+                // The page is the drawing's own size, so the image keeps its
+                // resolution and zooming the PDF stays sharp.
+                const doc = new jsPDF({
+                  orientation:
+                    bounds.width >= bounds.height ? "landscape" : "portrait",
+                  unit: "px",
+                  format: [bounds.width, bounds.height],
+                  hotfixes: ["px_scaling"],
+                });
                 doc.addImage(
                   dataUrl,
-                  "jpeg",
+                  "JPEG",
                   0,
                   0,
-                  canvas.offsetWidth,
-                  canvas.offsetHeight,
+                  bounds.width,
+                  bounds.height,
                 );
                 doc.save(`${filename}.pdf`);
-              });
+              } catch {
+                Toast.error(t("oops_smth_went_wrong"));
+              }
             },
           },
           {
@@ -1927,6 +1952,7 @@ export default function ControlPanel({
         modal={modal}
         exportData={exportData}
         setExportData={setExportData}
+        renderImage={renderImage}
         title={title}
         setTitle={setTitle}
         setModal={setModal}
@@ -1954,9 +1980,7 @@ export default function ControlPanel({
         cancelText={t("cancel")}
       >
         <div className="space-y-3">
-          <p className="text-sm">
-            {t("auto_connect_fk_modal_description")}
-          </p>
+          <p className="text-sm">{t("auto_connect_fk_modal_description")}</p>
           <ol className="list-decimal ps-5 space-y-1 text-sm">
             <li>{t("auto_connect_fk_rule_1")}</li>
             <li>{t("auto_connect_fk_rule_2")}</li>

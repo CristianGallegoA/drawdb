@@ -24,7 +24,6 @@ export const gridSize = 24;
 export const gridCircleRadius = 0.85;
 export const tableFieldHeight = 36;
 export const tableColorStripHeight = 7;
-export const pngExportPixelRatio = 4;
 export const minAreaSize = 120;
 export const maxTableCategoryLength = 6;
 export const tableCategories = ["core", "stg", "ref", "erp", "view"];

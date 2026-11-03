@@ -37,11 +37,16 @@ import {
 import { useTranslation } from "react-i18next";
 import { useHover } from "usehooks-ts";
 
+// How far outside the card its connection handles sit, clear of the border.
+const LINK_HANDLE_OUT = 14;
+
 export default function Area({
   data,
   onPointerDown,
   setResize,
   setInitDimensions,
+  onStartLink,
+  linkTarget = false,
 }) {
   const ref = useRef(null);
   const isHovered = useHover(ref);
@@ -187,13 +192,15 @@ export default function Area({
           className={`w-full h-full p-2 cursor-move border-2 ${
             isLayer(data) ? "rounded-lg border-dashed" : "rounded"
           } ${
-            isHovered
-              ? "border-dashed border-blue-500"
-              : isSelected
-                ? "border-blue-500 opacity-100"
-                : isLayer(data)
-                  ? "opacity-100"
-                  : "border-slate-400 opacity-100"
+            linkTarget
+              ? "border-blue-500 ring-4 ring-blue-400/40"
+              : isHovered
+                ? "border-dashed border-blue-500"
+                : isSelected
+                  ? "border-blue-500 opacity-100"
+                  : isLayer(data)
+                    ? "opacity-100"
+                    : "border-slate-400 opacity-100"
           }`}
           style={{
             // A layer is a frame around cards, so it stays unfilled; a card
@@ -202,7 +209,7 @@ export default function Area({
             backgroundColor: isLayer(data)
               ? "transparent"
               : `${data.color}${isCard(data) ? "26" : "66"}`,
-            ...(isOverviewArea(data) && !isHovered && !isSelected
+            ...(isOverviewArea(data) && !isHovered && !isSelected && !linkTarget
               ? { borderColor: data.color }
               : {}),
           }}
@@ -222,6 +229,7 @@ export default function Area({
                   )}
                   <button
                     className="ms-auto text-xs opacity-70 hover:opacity-100"
+                    data-export-ignore
                     title={t("show_detail")}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={() => drillDown(data)}
@@ -286,6 +294,7 @@ export default function Area({
                 type="tertiary"
                 size="small"
                 aria-label="Area actions"
+                data-export-ignore
               >
                 <Button
                   size="small"
@@ -321,8 +330,51 @@ export default function Area({
           </div>
         </div>
       </foreignObject>
+      {isHovered && onStartLink && !layout.readOnly && (
+        <g data-export-ignore>
+          {[
+            { x: data.x + data.width / 2, y: data.y - LINK_HANDLE_OUT },
+            {
+              x: data.x + data.width + LINK_HANDLE_OUT,
+              y: data.y + height / 2,
+            },
+            {
+              x: data.x + data.width / 2,
+              y: data.y + height + LINK_HANDLE_OUT,
+            },
+            { x: data.x - LINK_HANDLE_OUT, y: data.y + height / 2 },
+          ].map((p, i) => (
+            <g
+              key={i}
+              className="cursor-crosshair"
+              onPointerDown={(e) => {
+                if (!e.isPrimary || e.button !== 0) return;
+                // Not a drag of the card and not a rubber band: a new arrow.
+                e.stopPropagation();
+                onStartLink(data, p);
+              }}
+            >
+              <title>{t("drag_to_connect")}</title>
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={9}
+                fill={data.color}
+                stroke={settings.mode === "light" ? "white" : "rgb(28, 31, 35)"}
+                strokeWidth={2}
+              />
+              <path
+                d={`M ${p.x - 4} ${p.y} L ${p.x + 4} ${p.y} M ${p.x} ${p.y - 4} L ${p.x} ${p.y + 4}`}
+                stroke="white"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+            </g>
+          ))}
+        </g>
+      )}
       {isHovered && (
-        <>
+        <g data-export-ignore>
           <circle
             cx={data.x}
             cy={data.y}
@@ -363,7 +415,7 @@ export default function Area({
             cursor="nwse-resize"
             onPointerDown={(e) => e.isPrimary && handleResize(e, "br")}
           />
-        </>
+        </g>
       )}
     </g>
   );
