@@ -144,6 +144,7 @@ const en = {
     toggle_dashed: "Dashed line",
     export_resolution: "Resolution",
     drag_to_connect: "Drag to another card to connect them",
+    auto_route_link: "Automatic route (ignore the chosen handles)",
     reverse_link: "Reverse direction",
     add_area: "Add area",
     add_note: "Add note",

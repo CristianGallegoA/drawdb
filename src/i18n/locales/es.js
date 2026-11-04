@@ -144,6 +144,7 @@ const es = {
     toggle_dashed: "Línea punteada",
     export_resolution: "Resolución",
     drag_to_connect: "Arrastra hasta otra tarjeta para conectarlas",
+    auto_route_link: "Ruta automática (ignorar los + elegidos)",
     reverse_link: "Invertir dirección",
     add_area: "Añadir área",
     add_note: "Añadir nota",

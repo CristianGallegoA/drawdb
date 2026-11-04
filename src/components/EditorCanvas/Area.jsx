@@ -23,6 +23,9 @@ import {
   isOverviewArea,
   layerTableCount,
   tablesOfCard,
+  handlePoint,
+  LINK_HANDLE_OUT,
+  LINK_SIDES,
 } from "../../utils/blocks";
 import {
   useLayout,
@@ -37,8 +40,6 @@ import {
 import { useTranslation } from "react-i18next";
 import { useHover } from "usehooks-ts";
 
-// How far outside the card its connection handles sit, clear of the border.
-const LINK_HANDLE_OUT = 14;
 // Invisible margin that keeps a hovered card "hovered" while the pointer
 // crosses the gap between its border and its handles.
 const HOVER_MARGIN = LINK_HANDLE_OUT + 14;
@@ -50,6 +51,7 @@ export default function Area({
   setInitDimensions,
   onStartLink,
   linkTarget = false,
+  linkTargetSide,
 }) {
   const ref = useRef(null);
   const isHovered = useHover(ref);
@@ -183,7 +185,7 @@ export default function Area({
 
   return (
     <g ref={ref}>
-      {isHovered && onStartLink && !layout.readOnly && (
+      {(isHovered || linkTarget) && onStartLink && !layout.readOnly && (
         <rect
           x={data.x - HOVER_MARGIN}
           y={data.y - HOVER_MARGIN}
@@ -343,47 +345,51 @@ export default function Area({
           </div>
         </div>
       </foreignObject>
-      {isHovered && onStartLink && !layout.readOnly && (
+      {(isHovered || linkTarget) && onStartLink && !layout.readOnly && (
         <g data-export-ignore>
-          {[
-            { x: data.x + data.width / 2, y: data.y - LINK_HANDLE_OUT },
-            {
-              x: data.x + data.width + LINK_HANDLE_OUT,
-              y: data.y + height / 2,
-            },
-            {
-              x: data.x + data.width / 2,
-              y: data.y + height + LINK_HANDLE_OUT,
-            },
-            { x: data.x - LINK_HANDLE_OUT, y: data.y + height / 2 },
-          ].map((p, i) => (
-            <g
-              key={i}
-              className="cursor-crosshair"
-              onPointerDown={(e) => {
-                if (!e.isPrimary || e.button !== 0) return;
-                // Not a drag of the card and not a rubber band: a new arrow.
-                e.stopPropagation();
-                onStartLink(data, p);
-              }}
-            >
-              <title>{t("drag_to_connect")}</title>
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={9}
-                fill={data.color}
-                stroke={settings.mode === "light" ? "white" : "rgb(28, 31, 35)"}
-                strokeWidth={2}
-              />
-              <path
-                d={`M ${p.x - 4} ${p.y} L ${p.x + 4} ${p.y} M ${p.x} ${p.y - 4} L ${p.x} ${p.y + 4}`}
-                stroke="white"
-                strokeWidth={2}
-                strokeLinecap="round"
-              />
-            </g>
-          ))}
+          {LINK_SIDES.map((side) => {
+            const p = handlePoint({ ...data, height }, side);
+            const aimed = linkTarget && linkTargetSide === side;
+            return (
+              <g
+                key={side}
+                className="cursor-crosshair"
+                onPointerDown={(e) => {
+                  if (!e.isPrimary || e.button !== 0) return;
+                  // Not a drag of the card and not a rubber band: a new arrow.
+                  e.stopPropagation();
+                  onStartLink(data, p, side);
+                }}
+              >
+                <title>{t("drag_to_connect")}</title>
+                {aimed && (
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={16}
+                    fill={data.color}
+                    fillOpacity={0.25}
+                  />
+                )}
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={aimed ? 11 : 9}
+                  fill={data.color}
+                  stroke={
+                    settings.mode === "light" ? "white" : "rgb(28, 31, 35)"
+                  }
+                  strokeWidth={2}
+                />
+                <path
+                  d={`M ${p.x - 4} ${p.y} L ${p.x + 4} ${p.y} M ${p.x} ${p.y - 4} L ${p.x} ${p.y + 4}`}
+                  stroke="white"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                />
+              </g>
+            );
+          })}
         </g>
       )}
       {isHovered && (

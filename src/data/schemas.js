@@ -107,6 +107,8 @@ export const areaSchema = {
           to: { type: "string" },
           label: { type: "string" },
           dashed: { type: "boolean" },
+          fromSide: { enum: ["top", "right", "bottom", "left"] },
+          toSide: { enum: ["top", "right", "bottom", "left"] },
         },
         required: ["to"],
       },

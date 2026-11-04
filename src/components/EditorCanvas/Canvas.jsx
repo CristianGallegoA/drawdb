@@ -47,8 +47,10 @@ import {
   UNCATEGORIZED,
 } from "../../utils/utils";
 import {
-  cardAt,
   focusScene,
+  handlePoint,
+  linkDropTarget,
+  renderedHeight,
   isCard,
   isLayer,
   isOverviewArea,
@@ -144,24 +146,50 @@ export default function Canvas() {
     setBulkSelectedElements([]);
   };
 
-  const startLink = (card, point) => {
+  const startLink = (card, point, side) => {
     if (!card.key || layout.readOnly) return;
     setSelectedLink(null);
-    setLinkDraft({ fromKey: card.key, start: point, color: card.color });
+    setLinkDraft({
+      fromKey: card.key,
+      fromSide: side,
+      start: point,
+      color: card.color,
+    });
   };
 
+  // Where the draft would land: a card, and the handle it is dropped on, if
+  // any. Dropped on a handle, the arrow enters through that side; dropped on
+  // the card itself, the entry side stays automatic.
+  const linkDraftDrop = linkDraft
+    ? linkDropTarget(cards, tables, pointer.spaces.diagram)
+    : null;
+  const linkDraftTarget =
+    linkDraftDrop && linkDraftDrop.card.key !== linkDraft?.fromKey
+      ? linkDraftDrop
+      : null;
+
   const finishLink = () => {
-    const target = cardAt(cards, tables, pointer.spaces.diagram);
-    const from = linkDraft.fromKey;
+    const drop = linkDraftTarget;
+    const { fromKey, fromSide } = linkDraft;
     setLinkDraft(null);
-    if (!target?.key || target.key === from) return;
-    const created = linkActions.add(from, target.key);
+    if (!drop?.card.key) return;
+    const created = linkActions.add(fromKey, drop.card.key, {
+      fromSide,
+      toSide: drop.side,
+    });
     if (created) selectLink({ ...created, edit: true });
   };
 
-  const linkDraftTarget = linkDraft
-    ? cardAt(cards, tables, pointer.spaces.diagram)
-    : null;
+  // The draft snaps to the aimed handle, so the drop is easy to read.
+  const linkDraftEnd = linkDraftTarget?.side
+    ? handlePoint(
+        {
+          ...linkDraftTarget.card,
+          height: renderedHeight(linkDraftTarget.card, tables),
+        },
+        linkDraftTarget.side,
+      )
+    : pointer.spaces.diagram;
 
   useEffect(() => {
     if (!isOverview) {
@@ -988,10 +1016,11 @@ export default function Canvas() {
                     setResize={setAreaResize}
                     setInitDimensions={setAreaInitDimensions}
                     onStartLink={startLink}
-                    linkTarget={
-                      !!linkDraftTarget &&
-                      linkDraftTarget.id === a.id &&
-                      a.key !== linkDraft?.fromKey
+                    linkTarget={linkDraftTarget?.card.id === a.id}
+                    linkTargetSide={
+                      linkDraftTarget?.card.id === a.id
+                        ? linkDraftTarget.side
+                        : undefined
                     }
                     onPointerDown={() => {
                       elementPointerDown = {
@@ -1011,14 +1040,14 @@ export default function Canvas() {
                 {linkDraft && (
                   <g className="pointer-events-none" data-export-ignore>
                     <path
-                      d={`M ${linkDraft.start.x} ${linkDraft.start.y} L ${pointer.spaces.diagram.x} ${pointer.spaces.diagram.y}`}
+                      d={`M ${linkDraft.start.x} ${linkDraft.start.y} L ${linkDraftEnd.x} ${linkDraftEnd.y}`}
                       stroke={linkDraft.color}
                       strokeWidth={2.5}
                       strokeDasharray="8 6"
                     />
                     <circle
-                      cx={pointer.spaces.diagram.x}
-                      cy={pointer.spaces.diagram.y}
+                      cx={linkDraftEnd.x}
+                      cy={linkDraftEnd.y}
                       r={5}
                       fill={linkDraft.color}
                     />

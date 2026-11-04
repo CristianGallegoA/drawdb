@@ -47,7 +47,11 @@ export function useOverviewLinks(cards) {
             color: card.color,
             from,
             to,
-            ...linkGeometry(from, to, { twoWay }),
+            ...linkGeometry(from, to, {
+              twoWay,
+              fromSide: link.fromSide,
+              toSide: link.toSide,
+            }),
           },
         ];
       });
@@ -76,15 +80,26 @@ export function useOverviewLinkActions() {
     );
 
   return {
-    add(fromKey, toKey) {
+    // `sides` are the handles the arrow was drawn between. Drawing again
+    // between two cards already linked that way re-routes the existing arrow
+    // rather than stacking a second one on it.
+    add(fromKey, toKey, sides = {}) {
       const from = cardByKey(fromKey);
       if (!from || fromKey === toKey) return null;
       const links = from.links ?? [];
+      const ports = { fromSide: sides.fromSide, toSide: sides.toSide };
       const existing = links.findIndex((l) => l.to === toKey);
-      if (existing !== -1) return { key: fromKey, index: existing };
+      if (existing !== -1) {
+        const l = links[existing];
+        if (l.fromSide !== ports.fromSide || l.toSide !== ports.toSide)
+          rewrite(fromKey, (prev) =>
+            prev.map((x, i) => (i === existing ? { ...x, ...ports } : x)),
+          );
+        return { key: fromKey, index: existing };
+      }
       rewrite(fromKey, (prev) => [
         ...prev,
-        { to: toKey, label: "", dashed: false },
+        { to: toKey, label: "", dashed: false, ...ports },
       ]);
       return { key: fromKey, index: links.length };
     },
@@ -123,7 +138,16 @@ export function useOverviewLinkActions() {
               ...area,
               links:
                 backIndex === -1
-                  ? [...back, { ...link, to: key }]
+                  ? [
+                      ...back,
+                      // Reversed, the arrow keeps its path: its ends swap.
+                      {
+                        ...link,
+                        to: key,
+                        fromSide: link.toSide,
+                        toSide: link.fromSide,
+                      },
+                    ]
                   : back.map((l, i) =>
                       i === backIndex ? { ...l, ...contentOf(link) } : l,
                     ),
@@ -357,6 +381,21 @@ export function OverviewLinkEditor({
           }
         />
       </Tooltip>
+      {(item.link.fromSide || item.link.toSide) && (
+        <Tooltip content={t("auto_route_link")}>
+          <Button
+            size="small"
+            theme="borderless"
+            icon={<i className="bi bi-magic" />}
+            onClick={() =>
+              actions.update(item.key, item.index, {
+                fromSide: undefined,
+                toSide: undefined,
+              })
+            }
+          />
+        </Tooltip>
+      )}
       <Tooltip content={t("reverse_link")}>
         <Button
           size="small"

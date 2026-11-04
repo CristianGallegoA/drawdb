@@ -510,21 +510,123 @@ export function pointAlong(points, fraction) {
  * own lane and its text moves toward its source, so the two never overlap and
  * each sentence reads "source → does this → target".
  */
-export function linkGeometry(from, to, { twoWay = false } = {}) {
-  const { points, label } = linkRoute(from, to);
+export function linkGeometry(
+  from,
+  to,
+  { twoWay = false, fromSide, toSide } = {},
+) {
+  const { points, label } =
+    fromSide || toSide
+      ? portRoute(from, fromSide, to, toSide)
+      : linkRoute(from, to);
   if (!twoWay) return { points, label };
   const lane = offsetOrthogonal(points, TWO_WAY_GAP);
   return { points: lane, label: pointAlong(lane, 0.3) };
 }
 
+export const LINK_SIDES = ["top", "right", "bottom", "left"];
+// How far outside a card its connection handles sit, clear of the border.
+export const LINK_HANDLE_OUT = 14;
+// How close to a handle a drop has to land to count as aimed at it.
+const HANDLE_HIT_RADIUS = 18;
+// Straight run an arrow keeps when leaving or entering through a chosen side,
+// so it visibly comes out of that side before turning.
+const PORT_STUB = 24;
+
+const SIDE_DIRECTION = {
+  top: { x: 0, y: -1 },
+  right: { x: 1, y: 0 },
+  bottom: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+};
+const isHorizontalSide = (side) => side === "left" || side === "right";
+
+/** Where a card shows the connection handle of one side. */
+export function handlePoint(rect, side) {
+  const mid = sideMidpoint(rect, side);
+  const dir = SIDE_DIRECTION[side];
+  return {
+    x: mid.x + dir.x * LINK_HANDLE_OUT,
+    y: mid.y + dir.y * LINK_HANDLE_OUT,
+  };
+}
+
+// The side of `rect` that faces `point`, for an end left on automatic.
+function facingSide(rect, point) {
+  const c = centerOf(rect);
+  const dx = (point.x - c.x) / (rect.width || 1);
+  const dy = (point.y - c.y) / (rect.height || 1);
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "right" : "left";
+  return dy >= 0 ? "bottom" : "top";
+}
+
+/**
+ * An elbow that leaves and enters through the sides the designer picked by
+ * dragging from one handle to another. An end without a side picks the side
+ * facing the other card, as the automatic route does.
+ */
+export function portRoute(from, fromSide, to, toSide) {
+  const startSide = fromSide ?? facingSide(from, centerOf(to));
+  const endSide = toSide ?? facingSide(to, centerOf(from));
+  const start = sideMidpoint(from, startSide);
+  const end = sideMidpoint(to, endSide);
+  const out = SIDE_DIRECTION[startSide];
+  const inn = SIDE_DIRECTION[endSide];
+  const s = { x: start.x + out.x * PORT_STUB, y: start.y + out.y * PORT_STUB };
+  const e = { x: end.x + inn.x * PORT_STUB, y: end.y + inn.y * PORT_STUB };
+
+  let middle;
+  if (isHorizontalSide(startSide) && isHorizontalSide(endSide)) {
+    const midX = (s.x + e.x) / 2;
+    middle = [
+      { x: midX, y: s.y },
+      { x: midX, y: e.y },
+    ];
+  } else if (!isHorizontalSide(startSide) && !isHorizontalSide(endSide)) {
+    const midY = (s.y + e.y) / 2;
+    middle = [
+      { x: s.x, y: midY },
+      { x: e.x, y: midY },
+    ];
+  } else if (isHorizontalSide(startSide)) {
+    middle = [{ x: e.x, y: s.y }];
+  } else {
+    middle = [{ x: s.x, y: e.y }];
+  }
+
+  const points = simplify([start, s, ...middle, e, end]);
+  return { points, label: pointAlong(points, 0.5) };
+}
+
 /** Card whose drawn box holds a diagram point, topmost first. */
-export function cardAt(cards, tables, point) {
+export function cardAt(cards, tables, point, margin = 0) {
   for (let i = cards.length - 1; i >= 0; i--) {
     const card = cards[i];
-    const rect = { ...card, height: renderedHeight(card, tables) };
+    const rect = {
+      x: card.x - margin,
+      y: card.y - margin,
+      width: card.width + margin * 2,
+      height: renderedHeight(card, tables) + margin * 2,
+    };
     if (containsPoint(rect, point)) return card;
   }
   return null;
+}
+
+/**
+ * Where a dragged arrow would land: the card under the pointer (or just
+ * around it, where its handles are) and, when the pointer is on one of its
+ * handles, that side. Without a side the arrow end stays automatic.
+ */
+export function linkDropTarget(cards, tables, point) {
+  const card = cardAt(cards, tables, point, LINK_HANDLE_OUT + 14);
+  if (!card) return null;
+  const rect = { ...card, height: renderedHeight(card, tables) };
+  const side = LINK_SIDES.find((s) => {
+    const h = handlePoint(rect, s);
+    return Math.hypot(h.x - point.x, h.y - point.y) <= HANDLE_HIT_RADIUS;
+  });
+  return { card, side };
 }
 
 /**
