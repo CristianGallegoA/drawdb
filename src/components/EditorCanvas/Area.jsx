@@ -39,6 +39,9 @@ import { useHover } from "usehooks-ts";
 
 // How far outside the card its connection handles sit, clear of the border.
 const LINK_HANDLE_OUT = 14;
+// Invisible margin that keeps a hovered card "hovered" while the pointer
+// crosses the gap between its border and its handles.
+const HOVER_MARGIN = LINK_HANDLE_OUT + 14;
 
 export default function Area({
   data,
@@ -180,6 +183,16 @@ export default function Area({
 
   return (
     <g ref={ref}>
+      {isHovered && onStartLink && !layout.readOnly && (
+        <rect
+          x={data.x - HOVER_MARGIN}
+          y={data.y - HOVER_MARGIN}
+          width={data.width + HOVER_MARGIN * 2}
+          height={height + HOVER_MARGIN * 2}
+          fill="transparent"
+          data-export-ignore
+        />
+      )}
       <foreignObject
         key={data.id}
         x={data.x}
